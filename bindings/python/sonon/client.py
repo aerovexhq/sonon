@@ -189,6 +189,7 @@ class SononEngine:
         self.hop_size = int(hop_size)
         self.num_mfcc = int(num_mfcc)
         self._templates: List[Tuple[str, List[List[float]], float]] = []
+        self._last_distances: dict[str, float] = {}
         self._buffer: List[float] = []
         self._history: List[List[float]] = []
         self._total_samples = 0
@@ -197,8 +198,48 @@ class SononEngine:
             for n in range(frame_size)
         ]
 
+    @staticmethod
+    def trim_silence(
+        samples: Sequence[float],
+        sample_rate: float = 16000.0,
+        frame_size: int = 160,
+        threshold_ratio: float = 0.15,
+        margin_frames: int = 5,
+    ) -> List[float]:
+        """Trims leading and trailing silence from an audio sample sequence using energy VAD."""
+        n_samples = len(samples)
+        num_frames = n_samples // frame_size
+        if num_frames == 0:
+            return list(samples)
+
+        energies = []
+        for i in range(num_frames):
+            chunk = samples[i * frame_size : (i + 1) * frame_size]
+            rms = math.sqrt(sum(s * s for s in chunk) / max(1, len(chunk)))
+            energies.append(rms)
+
+        max_energy = max(energies)
+        if max_energy < 0.01:
+            return list(samples)
+
+        thresh = max(0.015, max_energy * threshold_ratio)
+        speech_indices = [i for i, e in enumerate(energies) if e >= thresh]
+        if not speech_indices:
+            return list(samples)
+
+        start_frame = max(0, speech_indices[0] - margin_frames)
+        end_frame = min(num_frames, speech_indices[-1] + margin_frames + 1)
+
+        start_sample = start_frame * frame_size
+        end_sample = min(n_samples, end_frame * frame_size)
+        return list(samples[start_sample:end_sample])
+
+    def get_last_distance(self, keyword: str) -> Optional[float]:
+        """Returns the latest evaluated DTW distance for an enrolled keyword."""
+        return self._last_distances.get(keyword)
+
     def extract_features(self, samples: Sequence[float]) -> List[List[float]]:
-        """Extracts Log-Mel / MFCC feature frames from an audio array."""
+        """Extracts Log-Mel / MFCC gain-invariant feature frames from an audio array."""
         features = []
         pos = 0
         n_samples = len(samples)
@@ -222,13 +263,21 @@ class SononEngine:
                         im -= frame[n] * math.sin(angle)
                     band_power += (re * re + im * im)
                 mels[m] = math.log(max(1e-6, band_power))
-            features.append(mels)
+
+            # Gain-invariant normalization: Cepstral Mean Subtraction and L2 unit-norm
+            mean_mel = sum(mels) / self.num_mfcc
+            centered = [x - mean_mel for x in mels]
+            norm = math.sqrt(sum(x * x for x in centered))
+            if norm > 1e-4:
+                features.append([x / norm for x in centered])
+            else:
+                features.append(centered)
             pos += self.hop_size
 
         return features
 
     def enroll_keyword(
-        self, name: str, features: List[List[float]], threshold: float = 3.5
+        self, name: str, features: List[List[float]], threshold: float = 0.60
     ) -> None:
         """Enrolls a reference exemplar keyword template."""
         self._templates.append((name, features, float(threshold)))
@@ -252,26 +301,32 @@ class SononEngine:
                 # Check templates
                 for kw_name, tpl, thresh in self._templates:
                     tpl_len = len(tpl)
-                    if len(self._history) >= tpl_len:
-                        obs = self._history[-tpl_len:]
-                        dist = self._sakoe_chiba_distance(obs, tpl, 8)
-                        if dist < thresh:
-                            conf = max(0.0, min(1.0, 1.0 - (dist / thresh)))
-                            ts = self._total_samples / self.sample_rate
-                            detections.append(
-                                KeywordEvent(
-                                    keyword=kw_name,
-                                    confidence=conf,
-                                    timestamp_sec=ts,
-                                )
+                    band = max(4, tpl_len // 4)
+                    best_d = float("inf")
+                    for cand_len in (tpl_len, tpl_len - 2, tpl_len + 2):
+                        if cand_len > 0 and len(self._history) >= cand_len:
+                            obs = self._history[-cand_len:]
+                            d = self._sakoe_chiba_distance(obs, tpl, band)
+                            if d < best_d:
+                                best_d = d
+                    self._last_distances[kw_name] = best_d
+                    if best_d < thresh:
+                        conf = max(0.0, min(1.0, 1.0 - (best_d / thresh)))
+                        ts = self._total_samples / self.sample_rate
+                        detections.append(
+                            KeywordEvent(
+                                keyword=kw_name,
+                                confidence=conf,
+                                timestamp_sec=ts,
                             )
+                        )
         return detections
 
     def _sakoe_chiba_distance(
         self, s: List[List[float]], t: List[List[float]], r: int
     ) -> float:
         n, m = len(s), len(t)
-        if n == 0 or m == 0:
+        if n == 0 or m == 0 or abs(n - m) > r:
             return float("inf")
 
         cost = [[float("inf")] * (m + 1) for _ in range(n + 1)]
@@ -281,8 +336,11 @@ class SononEngine:
             j_min = max(1, i - r)
             j_max = min(m, i + r)
             for j in range(j_min, j_max + 1):
-                d = sum((s[i - 1][f] - t[j - 1][f]) ** 2 for f in range(self.num_mfcc))
+                diff_sq = sum((s[i - 1][f] - t[j - 1][f]) ** 2 for f in range(self.num_mfcc))
+                d = math.sqrt(diff_sq)
                 min_prev = min(cost[i - 1][j], cost[i][j - 1], cost[i - 1][j - 1])
                 cost[i][j] = d + min_prev
 
+        if not math.isfinite(cost[n][m]):
+            return float("inf")
         return cost[n][m] / max(1, n + m)

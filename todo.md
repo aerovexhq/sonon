@@ -30,19 +30,27 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-*(All 12 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language, Embedded, Neuromorphic, PyPI, and NPM Targets - 56/56 Tests PASS)*
+*(All 13 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language, Embedded, Neuromorphic, PyPI, NPM, and Live Microphone Capture Targets - 56/56 Rust Tests + Python + JS PASS)*
 
 ---
 
 ## Future
 
-- [ ] **Phase 13 (Future Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
+- [ ] **Phase 14 (Future Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
   - [ ] SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
   - [ ] Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
 
 ---
 
 ## Done
+
+- [x] **Phase 13: Live Microphone Enrollment, Auditory Playback Feedback & Gain-Invariant Acoustic Spotting - [P1]**
+  - [x] Implemented energy-based VAD silence trimming (`SononEngine.trim_silence` / `SononEngine.trimSilence`) isolating active speech utterances from dead background silence.
+  - [x] Implemented immediate acoustic playback confirmation via `aplay` (Linux) / `sounddevice` (cross-platform) / `afplay` (macOS), playing back enrolled wake-words to the user before listening starts.
+  - [x] Engineered gain-invariant spectral feature normalization (Cepstral Mean Subtraction and L2 unit-norm) in Python and JS/Node.js engines, ensuring acoustic distance is invariant to mic gain and RMS levels.
+  - [x] Fixed DTW Euclidean distance metric (`math.sqrt(...)` / `Math.sqrt(...)`) and multi-rate candidate window matching ($L \pm 2$).
+  - [x] Added dynamic terminal visual telemetry displaying live microphone RMS levels and DTW distance meters in real-time.
+  - [x] Rebuilt and verified redistributable Python wheel (`dist/sonon-0.1.0-py3-none-any.whl`), sdist, and NPM package (`dist/aerovexhq-sonon-0.1.0.tgz`).
 
 - [x] **Phase 12: Empirical Train/Test Cross-Validation Accuracy Benchmark & Evaluation Report - [P1]**
   - [x] Evaluated 1-shot medoid enrollment and 3-shot DBA centroid on 14 unseen citation test exemplars and 40.8s continuous distractor stream.
