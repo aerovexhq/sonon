@@ -149,22 +149,28 @@ function startLiveListening(cmd, args, threshold) {
   listener.stdout.on('data', (chunk) => {
     const numSamples = Math.floor(chunk.length / 2);
     const floatSamples = new Float32Array(numSamples);
-    let sumSq = 0.0;
-
+    let sum = 0.0;
     for (let i = 0; i < numSamples; i++) {
       const val = chunk.readInt16LE(i * 2) / 32768.0;
       floatSamples[i] = val;
-      sumSq += val * val;
+      sum += val;
+    }
+
+    const mean = sum / Math.max(1, numSamples);
+    let acSumSq = 0.0;
+    for (let i = 0; i < numSamples; i++) {
+      const diff = floatSamples[i] - mean;
+      acSumSq += diff * diff;
     }
 
     const detections = engine.ingestSamples(floatSamples);
     const dist = engine.getLastDistance('wake_word');
-    const rms = Math.sqrt(sumSq / Math.max(1, numSamples));
-    const bars = Math.min(15, Math.floor(rms * 40));
+    const acRms = Math.sqrt(acSumSq / Math.max(1, numSamples));
+    const bars = Math.min(15, Math.floor(acRms * 40));
     const meter = '#'.repeat(bars) + ' '.repeat(15 - bars);
-    const distStr = dist !== undefined && isFinite(dist) ? dist.toFixed(3) : '---';
+    const distStr = dist !== undefined && isFinite(dist) ? dist.toFixed(3) : '...';
 
-    process.stdout.write(`\r[LISTENING] Level: [${meter}] (RMS: ${rms.toFixed(3)}) | Best Dist: ${distStr} (Thresh: ${threshold.toFixed(2)})  `);
+    process.stdout.write(`\r[LISTENING] Level: [${meter}] (RMS: ${acRms.toFixed(3)}) | Best Dist: ${distStr} (Thresh: ${threshold.toFixed(2)})  `);
 
     const now = Date.now();
     for (const ev of detections) {

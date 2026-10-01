@@ -154,13 +154,14 @@ def listen_with_system_mic():
             dist = engine.get_last_distance(keyword_name)
             now = time.time()
 
-            # Visual volume meter
-            rms = math.sqrt(sum(s * s for s in chunk) / max(1, len(chunk)))
-            bars = min(15, int(rms * 40))
+            # Visual volume meter (DC-free AC energy)
+            mean_c = sum(chunk) / max(1, len(chunk))
+            ac_rms = math.sqrt(sum((s - mean_c) ** 2 for s in chunk) / max(1, len(chunk)))
+            bars = min(15, int(ac_rms * 40))
             meter = "#" * bars + " " * (15 - bars)
-            dist_str = f"{dist:.3f}" if dist is not None and math.isfinite(dist) else "---"
+            dist_str = f"{dist:.3f}" if dist is not None and math.isfinite(dist) else "..."
 
-            sys.stdout.write(f"\r[LISTENING] Level: [{meter}] (RMS: {rms:.3f}) | Best Dist: {dist_str} (Thresh: {threshold:.2f})  ")
+            sys.stdout.write(f"\r[LISTENING] Level: [{meter}] (RMS: {ac_rms:.3f}) | Best Dist: {dist_str} (Thresh: {threshold:.2f})  ")
             sys.stdout.flush()
 
             for ev in events:
@@ -198,6 +199,7 @@ def listen_with_sounddevice():
     print("Step 1: Wake-Word Enrollment")
     print("Press Enter and say your wake word (e.g. 'Take Off' or 'Plank')...")
     input()
+    time.sleep(0.2)
 
     enroll_sec = 2.0
     print("Recording for 2.0 seconds... speak now!")
@@ -247,12 +249,13 @@ def listen_with_sounddevice():
         dist = engine.get_last_distance(keyword_name)
         now = time.time()
 
-        rms = math.sqrt(sum(s * s for s in chunk) / max(1, len(chunk)))
-        bars = min(15, int(rms * 40))
+        mean_c = sum(chunk) / max(1, len(chunk))
+        ac_rms = math.sqrt(sum((s - mean_c) ** 2 for s in chunk) / max(1, len(chunk)))
+        bars = min(15, int(ac_rms * 40))
         meter = "#" * bars + " " * (15 - bars)
-        dist_str = f"{dist:.3f}" if dist is not None and math.isfinite(dist) else "---"
+        dist_str = f"{dist:.3f}" if dist is not None and math.isfinite(dist) else "..."
 
-        sys.stdout.write(f"\r[LISTENING] Level: [{meter}] (RMS: {rms:.3f}) | Best Dist: {dist_str} (Thresh: {threshold:.2f})  ")
+        sys.stdout.write(f"\r[LISTENING] Level: [{meter}] (RMS: {ac_rms:.3f}) | Best Dist: {dist_str} (Thresh: {threshold:.2f})  ")
         sys.stdout.flush()
 
         for ev in events:

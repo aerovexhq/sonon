@@ -193,10 +193,22 @@ class SononEngine:
         self._buffer: List[float] = []
         self._history: List[List[float]] = []
         self._total_samples = 0
+        self._dc_x_prev = 0.0
+        self._dc_y_prev = 0.0
+        self._dc_r = 0.995
         self._window = [
             0.5 * (1.0 - math.cos(2.0 * math.pi * n / (frame_size - 1)))
             for n in range(frame_size)
         ]
+
+    @staticmethod
+    def remove_dc(samples: Sequence[float]) -> List[float]:
+        """Removes constant DC bias from an audio sample sequence."""
+        n = len(samples)
+        if n == 0:
+            return list(samples)
+        mean_val = sum(samples) / n
+        return [s - mean_val for s in samples]
 
     @staticmethod
     def trim_silence(
@@ -206,33 +218,55 @@ class SononEngine:
         threshold_ratio: float = 0.15,
         margin_frames: int = 5,
     ) -> List[float]:
-        """Trims leading and trailing silence from an audio sample sequence using energy VAD."""
+        """Trims leading and trailing silence and pops using DC-free energy VAD."""
         n_samples = len(samples)
-        num_frames = n_samples // frame_size
-        if num_frames == 0:
+        if n_samples == 0:
             return list(samples)
 
+        # 1. Remove DC bias across the entire buffer
+        mean_val = sum(samples) / n_samples
+        ac_samples = [s - mean_val for s in samples]
+
+        num_frames = n_samples // frame_size
+        if num_frames == 0:
+            return ac_samples
+
+        # 2. Compute RMS on AC signal
         energies = []
         for i in range(num_frames):
-            chunk = samples[i * frame_size : (i + 1) * frame_size]
+            chunk = ac_samples[i * frame_size : (i + 1) * frame_size]
             rms = math.sqrt(sum(s * s for s in chunk) / max(1, len(chunk)))
             energies.append(rms)
 
         max_energy = max(energies)
         if max_energy < 0.01:
-            return list(samples)
+            return ac_samples
 
         thresh = max(0.015, max_energy * threshold_ratio)
         speech_indices = [i for i, e in enumerate(energies) if e >= thresh]
         if not speech_indices:
-            return list(samples)
+            return ac_samples
+
+        # Discard spurious boundary clicks at the extreme start and end
+        filtered_indices = [idx for idx in speech_indices if 2 <= idx <= num_frames - 3]
+        if filtered_indices:
+            speech_indices = filtered_indices
 
         start_frame = max(0, speech_indices[0] - margin_frames)
         end_frame = min(num_frames, speech_indices[-1] + margin_frames + 1)
 
         start_sample = start_frame * frame_size
         end_sample = min(n_samples, end_frame * frame_size)
-        return list(samples[start_sample:end_sample])
+        trimmed = ac_samples[start_sample:end_sample]
+
+        # 3. Soft Hann fade-in and fade-out (20ms) to eliminate edge pop clicks
+        fade_len = min(int(0.02 * sample_rate), len(trimmed) // 4)
+        for i in range(fade_len):
+            ramp = 0.5 * (1.0 - math.cos(math.pi * i / max(1, fade_len)))
+            trimmed[i] *= ramp
+            trimmed[-1 - i] *= ramp
+
+        return trimmed
 
     def get_last_distance(self, keyword: str) -> Optional[float]:
         """Returns the latest evaluated DTW distance for an enrolled keyword."""
@@ -244,9 +278,13 @@ class SononEngine:
         pos = 0
         n_samples = len(samples)
 
+        # Remove local DC bias from input audio
+        mean_s = sum(samples) / max(1, n_samples)
+        ac_samples = [s - mean_s for s in samples]
+
         while pos + self.frame_size <= n_samples:
             frame = [
-                samples[pos + i] * self._window[i] for i in range(self.frame_size)
+                ac_samples[pos + i] * self._window[i] for i in range(self.frame_size)
             ]
             # Fast power spectrum approximation across num_mfcc filter bands
             mels = [0.0] * self.num_mfcc
@@ -283,10 +321,26 @@ class SononEngine:
         self._templates.append((name, features, float(threshold)))
 
     def ingest_samples(self, samples: Sequence[float]) -> List[KeywordEvent]:
-        """Ingests streaming samples and evaluates keyword spotting."""
-        self._buffer.extend(samples)
+        """Ingests streaming samples and evaluates keyword spotting with DC blocking."""
+        # 1. Real-time DC blocker filter
+        dc_r = self._dc_r
+        x_prev = self._dc_x_prev
+        y_prev = self._dc_y_prev
+        ac_samples = [0.0] * len(samples)
+        for i, x in enumerate(samples):
+            y = x - x_prev + dc_r * y_prev
+            ac_samples[i] = y
+            x_prev = x
+            y_prev = y
+        self._dc_x_prev = x_prev
+        self._dc_y_prev = y_prev
+
+        self._buffer.extend(ac_samples)
         self._total_samples += len(samples)
         detections = []
+
+        max_tpl = max([len(t[1]) for t in self._templates], default=50)
+        max_hist = max(250, max_tpl + 60)
 
         while len(self._buffer) >= self.frame_size:
             chunk = self._buffer[: self.frame_size]
@@ -295,8 +349,8 @@ class SononEngine:
             feat = self.extract_features(chunk)
             if feat:
                 self._history.extend(feat)
-                if len(self._history) > 100:
-                    self._history = self._history[-100:]
+                if len(self._history) > max_hist:
+                    self._history = self._history[-max_hist:]
 
                 # Check templates
                 for kw_name, tpl, thresh in self._templates:
