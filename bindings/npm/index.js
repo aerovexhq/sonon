@@ -154,6 +154,20 @@ class SononEngine {
         mels[m] = Math.log(Math.max(1e-6, bandPower));
       }
 
+      // Gain-invariant normalization: Cepstral Mean Subtraction and L2 unit-norm
+      let sum = 0.0;
+      for (let m = 0; m < this.numMfcc; m++) sum += mels[m];
+      const mean = sum / this.numMfcc;
+      let normSq = 0.0;
+      for (let m = 0; m < this.numMfcc; m++) {
+        mels[m] -= mean;
+        normSq += mels[m] * mels[m];
+      }
+      const norm = Math.sqrt(normSq);
+      if (norm > 1e-4) {
+        for (let m = 0; m < this.numMfcc; m++) mels[m] /= norm;
+      }
+
       features.push(Array.from(mels));
       pos += this.hopSize;
     }
@@ -161,7 +175,56 @@ class SononEngine {
     return features;
   }
 
-  enrollKeyword(name, features, threshold = 3.5) {
+  static trimSilence(samples, sampleRate = 16000, frameSize = 160, thresholdRatio = 0.15, marginFrames = 5) {
+    const nSamples = samples.length;
+    const numFrames = Math.floor(nSamples / frameSize);
+    if (numFrames === 0) return Array.from(samples);
+
+    const energies = new Float32Array(numFrames);
+    let maxEnergy = 0.0;
+
+    for (let i = 0; i < numFrames; i++) {
+      let sumSq = 0.0;
+      const offset = i * frameSize;
+      for (let s = 0; s < frameSize; s++) {
+        const val = samples[offset + s];
+        sumSq += val * val;
+      }
+      const rms = Math.sqrt(sumSq / frameSize);
+      energies[i] = rms;
+      if (rms > maxEnergy) maxEnergy = rms;
+    }
+
+    if (maxEnergy < 0.01) return Array.from(samples);
+
+    const thresh = Math.max(0.015, maxEnergy * thresholdRatio);
+    let firstSpeech = -1;
+    let lastSpeech = -1;
+
+    for (let i = 0; i < numFrames; i++) {
+      if (energies[i] >= thresh) {
+        if (firstSpeech === -1) firstSpeech = i;
+        lastSpeech = i;
+      }
+    }
+
+    if (firstSpeech === -1) return Array.from(samples);
+
+    const startFrame = Math.max(0, firstSpeech - marginFrames);
+    const endFrame = Math.min(numFrames, lastSpeech + marginFrames + 1);
+
+    const startSample = startFrame * frameSize;
+    const endSample = Math.min(nSamples, endFrame * frameSize);
+
+    return Array.from(samples.slice(startSample, endSample));
+  }
+
+  getLastDistance(keyword) {
+    return this.lastDistances ? this.lastDistances[keyword] : undefined;
+  }
+
+  enrollKeyword(name, features, threshold = 0.60) {
+    if (!this.lastDistances) this.lastDistances = {};
     this.templates.push({
       name: String(name),
       features: features,
@@ -170,6 +233,7 @@ class SononEngine {
   }
 
   ingestSamples(samples) {
+    if (!this.lastDistances) this.lastDistances = {};
     for (let i = 0; i < samples.length; i++) {
       this.buffer.push(samples[i]);
     }
@@ -191,18 +255,29 @@ class SononEngine {
 
         for (const tpl of this.templates) {
           const tplLen = tpl.features.length;
-          if (this.history.length >= tplLen) {
-            const obs = this.history.slice(-tplLen);
-            const dist = this._sakoeChibaDistance(obs, tpl.features, 8);
-            if (dist < tpl.threshold) {
-              const conf = Math.max(0.0, Math.min(1.0, 1.0 - dist / tpl.threshold));
-              const ts = this.totalSamples / this.sampleRate;
-              detections.push({
-                keyword: tpl.name,
-                confidence: conf,
-                timestampSec: ts,
-              });
+          const band = Math.max(4, Math.floor(tplLen / 4));
+          let bestDist = Infinity;
+
+          for (const candLen of [tplLen, tplLen - 2, tplLen + 2]) {
+            if (candLen > 0 && this.history.length >= candLen) {
+              const obs = this.history.slice(-candLen);
+              const dist = this._sakoeChibaDistance(obs, tpl.features, band);
+              if (dist < bestDist) {
+                bestDist = dist;
+              }
             }
+          }
+
+          this.lastDistances[tpl.name] = bestDist;
+
+          if (bestDist < tpl.threshold) {
+            const conf = Math.max(0.0, Math.min(1.0, 1.0 - bestDist / tpl.threshold));
+            const ts = this.totalSamples / this.sampleRate;
+            detections.push({
+              keyword: tpl.name,
+              confidence: conf,
+              timestampSec: ts,
+            });
           }
         }
       }
@@ -214,7 +289,7 @@ class SononEngine {
   _sakoeChibaDistance(s, t, r) {
     const n = s.length;
     const m = t.length;
-    if (n === 0 || m === 0) return Infinity;
+    if (n === 0 || m === 0 || Math.abs(n - m) > r) return Infinity;
 
     const cost = Array.from({ length: n + 1 }, () => new Float32Array(m + 1).fill(Infinity));
     cost[0][0] = 0.0;
@@ -224,16 +299,18 @@ class SononEngine {
       const jMax = Math.min(m, i + r);
 
       for (let j = jMin; j <= jMax; j++) {
-        let d = 0.0;
+        let diffSq = 0.0;
         for (let f = 0; f < this.numMfcc; f++) {
           const diff = s[i - 1][f] - t[j - 1][f];
-          d += diff * diff;
+          diffSq += diff * diff;
         }
+        const d = Math.sqrt(diffSq);
         const minPrev = Math.min(cost[i - 1][j], cost[i][j - 1], cost[i - 1][j - 1]);
         cost[i][j] = d + minPrev;
       }
     }
 
+    if (!isFinite(cost[n][m])) return Infinity;
     return cost[n][m] / Math.max(1, n + m);
   }
 }
