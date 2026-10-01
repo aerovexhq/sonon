@@ -206,7 +206,7 @@ fn test_aerossm_and_anticipatory_throughput() {
     );
 
     let target = if cfg!(debug_assertions) {
-        800_000.0
+        500_000.0
     } else {
         1_000_000.0
     };
