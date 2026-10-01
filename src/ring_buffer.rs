@@ -49,6 +49,29 @@ impl AudioRingBuffer {
         true
     }
 
+    /// Peek the oldest `n` samples in chronological order into `out` without advancing.
+    /// Returns true if at least `n` samples were available.
+    pub fn peek(&self, n: usize, out: &mut [f32]) -> bool {
+        if n > self.count || n > out.len() {
+            return false;
+        }
+
+        for i in 0..n {
+            let idx = (self.head + i) % self.capacity;
+            out[i] = self.buffer[idx];
+        }
+        true
+    }
+
+    /// Discard the oldest `n` samples from the ring buffer.
+    /// Returns the number of samples actually discarded.
+    pub fn pop_front(&mut self, n: usize) -> usize {
+        let to_pop = n.min(self.count);
+        self.head = (self.head + to_pop) % self.capacity;
+        self.count -= to_pop;
+        to_pop
+    }
+
     /// Return current number of buffered samples.
     pub fn len(&self) -> usize {
         self.count

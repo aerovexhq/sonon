@@ -75,6 +75,21 @@ impl MelFilterbank {
         }
     }
 
+    /// Apply filterbank to power spectrum, producing linear channel energies.
+    pub fn compute_energies(&self, power_spectrum: &[f32]) -> Vec<f32> {
+        let mut energies = Vec::with_capacity(self.num_filters);
+        for filter in &self.filter_weights {
+            let mut sum = 0.0f32;
+            for &(bin, weight) in filter {
+                if bin < power_spectrum.len() {
+                    sum += power_spectrum[bin] * weight;
+                }
+            }
+            energies.push(sum);
+        }
+        energies
+    }
+
     /// Apply filterbank to power spectrum, producing log-energies.
     pub fn compute_log_energies(&self, power_spectrum: &[f32]) -> Vec<f32> {
         let mut log_energies = Vec::with_capacity(self.num_filters);
