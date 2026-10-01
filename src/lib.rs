@@ -13,6 +13,7 @@ pub mod beamforming;
 pub mod capi;
 pub mod dtw;
 pub mod engine;
+pub mod fixed;
 pub mod health;
 pub mod mel;
 pub mod notch;
@@ -34,6 +35,7 @@ pub use dtw::{
     PhraseTemplate,
 };
 pub use engine::{FeatureMode, KeywordEvent, SononEngine};
+pub use fixed::{FixedDtwMatcher, StaticAudioBuffer, Q15, Q31};
 pub use health::{
     AcousticHealthMonitor, AirframeHealthSnapshot, AnomalySeverity, MavlinkNamedValueFloat,
     MotorHealthConfig, MotorHealthReport,
