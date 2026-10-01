@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sonon Web Audio Live Wake-Word Spotter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 30px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+      color: #38bdf8;
+    }
+    p {
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    button {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-right: 10px;
+      margin-bottom: 15px;
+    }
+    button:hover { background: #0369a1; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    .status {
+      padding: 12px 16px;
+      border-radius: 8px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      font-family: monospace;
+      font-size: 14px;
+      margin-top: 15px;
+      color: #38bdf8;
+    }
+    .log-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      height: 180px;
+      overflow-y: auto;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 13px;
+      margin-top: 15px;
+    }
+    .trigger {
+      color: #4ade80;
+      font-weight: bold;
+    }
+    .meter {
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .fill {
+      height: 100%;
+      width: 0%;
+      background: #38bdf8;
+      transition: width 0.05s ease;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sonon Live Wake-Word Spotter</h1>
+    <p>Zero-cloud browser acoustic DSP with Sakoe-Chiba Dynamic Time Warping.</p>
+
+    <div>
+      <button id="btnStart">1. Start Microphone</button>
+      <button id="btnEnroll" disabled>2. Record & Enroll Word</button>
+    </div>
+
+    <div class="meter"><div class="fill" id="meterFill"></div></div>
+    <div class="status" id="statusText">Microphone inactive. Click 'Start Microphone' to begin.</div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+
+  <script>
+    // Embedded SononEngine in pure JavaScript
+    class SononEngine {
+      constructor(sampleRate = 16000, frameSize = 512, hopSize = 160, numMfcc = 26) {
+        this.sampleRate = sampleRate;
+        this.frameSize = frameSize;
+        this.hopSize = hopSize;
+        this.numMfcc = numMfcc;
+        this.templates = [];
+        this.buffer = [];
+        this.history = [];
+        this.totalSamples = 0;
+        this.window = new Float32Array(frameSize);
+        for (let i = 0; i < frameSize; i++) {
+          this.window[i] = 0.5 * (1.0 - Math.cos((2.0 * Math.PI * i) / (frameSize - 1)));
+        }
+      }
+
+      extractFeatures(samples) {
+        const features = [];
+        let pos = 0;
+        while (pos + this.frameSize <= samples.length) {
+          const frame = new Float32Array(this.frameSize);
+          for (let i = 0; i < this.frameSize; i++) frame[i] = samples[pos + i] * this.window[i];
+          const mels = new Float32Array(this.numMfcc);
+          for (let m = 0; m < this.numMfcc; m++) {
+            const kStart = Math.floor((m * (this.frameSize / 2)) / this.numMfcc);
+            const kEnd = Math.max(kStart + 1, Math.floor(((m + 1) * (this.frameSize / 2)) / this.numMfcc));
+            let p = 0.0;
+            for (let k = kStart; k < kEnd; k++) {
+              let re = 0.0, im = 0.0;
+              for (let s = 0; s < this.frameSize; s += 4) {
+                const a = (2.0 * Math.PI * k * s) / this.frameSize;
+                re += frame[s] * Math.cos(a);
+                im -= frame[s] * Math.sin(a);
+              }
+              p += re * re + im * im;
+            }
+            mels[m] = Math.log(Math.max(1e-6, p));
+          }
+          features.push(Array.from(mels));
+          pos += this.hopSize;
+        }
+        return features;
+      }
+
+      enrollKeyword(name, features, threshold = 3.5) {
+        this.templates.push({ name, features, threshold });
+      }
+
+      ingestSamples(samples) {
+        for (let i = 0; i < samples.length; i++) this.buffer.push(samples[i]);
+        this.totalSamples += samples.length;
+        const detections = [];
+        while (this.buffer.length >= this.frameSize) {
+          const chunk = this.buffer.slice(0, this.frameSize);
+          this.buffer = this.buffer.slice(this.hopSize);
+          const feats = this.extractFeatures(chunk);
+          if (feats.length > 0) {
+            for (const f of feats) this.history.push(f);
+            if (this.history.length > 100) this.history = this.history.slice(-100);
+            for (const tpl of this.templates) {
+              if (this.history.length >= tpl.features.length) {
+                const obs = this.history.slice(-tpl.features.length);
+                const dist = this._sakoeChibaDistance(obs, tpl.features, 8);
+                if (dist < tpl.threshold) {
+                  detections.push({
+                    keyword: tpl.name,
+                    confidence: Math.max(0, Math.min(1, 1.0 - dist / tpl.threshold)),
+                    timestamp: this.totalSamples / this.sampleRate
+                  });
+                }
+              }
+            }
+          }
+        }
+        return detections;
+      }
+
+      _sakoeChibaDistance(s, t, r) {
+        const n = s.length, m = t.length;
+        if (!n || !m) return Infinity;
+        const cost = Array.from({ length: n + 1 }, () => new Float32Array(m + 1).fill(Infinity));
+        cost[0][0] = 0.0;
+        for (let i = 1; i <= n; i++) {
+          const jMin = Math.max(1, i - r), jMax = Math.min(m, i + r);
+          for (let j = jMin; j <= jMax; j++) {
+            let d = 0.0;
+            for (let f = 0; f < this.numMfcc; f++) {
+              const diff = s[i - 1][f] - t[j - 1][f];
+              d += diff * diff;
+            }
+            cost[i][j] = d + Math.min(cost[i - 1][j], cost[i][j - 1], cost[i - 1][j - 1]);
+          }
+        }
+        return cost[n][m] / Math.max(1, n + m);
+      }
+    }
+
+    const engine = new SononEngine(16000);
+    let audioContext, micStream, scriptNode;
+    let isEnrolling = false;
+    let enrollBuffer = [];
+
+    const btnStart = document.getElementById('btnStart');
+    const btnEnroll = document.getElementById('btnEnroll');
+    const statusText = document.getElementById('statusText');
+    const logBox = document.getElementById('logBox');
+    const meterFill = document.getElementById('meterFill');
+
+    function log(msg, isTrigger = false) {
+      const line = document.createElement('div');
+      line.className = isTrigger ? 'trigger' : '';
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    btnStart.addEventListener('click', async () => {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        micStream = audioContext.createMediaStreamSource(stream);
+        scriptNode = audioContext.createScriptProcessor(512, 1, 1);
+
+        scriptNode.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          let sumSquares = 0.0;
+          for (let i = 0; i < input.length; i++) sumSquares += input[i] * input[i];
+          const rms = Math.sqrt(sumSquares / input.length);
+          meterFill.style.width = Math.min(100, rms * 400) + '%';
+
+          if (isEnrolling) {
+            for (let i = 0; i < input.length; i++) enrollBuffer.push(input[i]);
+          } else if (engine.templates.length > 0) {
+            const hits = engine.ingestSamples(input);
+            for (const hit of hits) {
+              log(`SPOTTED: '${hit.keyword}' (Confidence: ${(hit.confidence * 100).toFixed(1)}%)`, true);
+            }
+          }
+        };
+
+        micStream.connect(scriptNode);
+        scriptNode.connect(audioContext.destination);
+
+        btnStart.disabled = true;
+        btnEnroll.disabled = false;
+        statusText.textContent = "Microphone active at 16 kHz. Click 'Record & Enroll Word' to set keyword.";
+        log("Microphone initialized.");
+      } catch (err) {
+        statusText.textContent = "Error: " + err.message;
+      }
+    });
+
+    btnEnroll.addEventListener('click', () => {
+      isEnrolling = true;
+      enrollBuffer = [];
+      btnEnroll.disabled = true;
+      statusText.textContent = "Speak your keyword NOW (recording 1.2s)...";
+
+      setTimeout(() => {
+        isEnrolling = false;
+        const samples = new Float32Array(enrollBuffer);
+        const feats = engine.extractFeatures(samples);
+        if (feats.length < 3) {
+          statusText.textContent = "Audio too quiet or short. Try enrolling again.";
+          btnEnroll.disabled = false;
+        } else {
+          engine.enrollKeyword("custom_keyword", feats, 3.5);
+          statusText.textContent = `Enrolled! (${feats.length} frames). Speak naturally; keyword will trigger below.`;
+          log(`Keyword enrolled with ${feats.length} feature frames.`);
+          btnEnroll.disabled = false;
+        }
+      }, 1200);
+    });
+  </script>
+</body>
+</html>
