@@ -30,16 +30,6 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 7: C-ABI FFI Layer, Shared Memory Audio Ingestion & C/C++/Python Bindings - [P3]**
-  - [ ] C-compatible FFI interface (`sonon_create`, `sonon_ingest`, `sonon_enroll`, `sonon_destroy`) in `capi.rs`.
-  - [ ] Zero-copy ring buffer reader over POSIX shared memory (`/dev/shm/sonon_audio`).
-  - [ ] Lightweight Python wrapper (`sonon-py`) with NumPy array zero-copy passing.
-  - [ ] C++20 header-only wrapper with RAII handle.
-
----
-
-## Future
-
 - [ ] **Phase 8: `#![no_std]` Embedded HAL Support & Microcontroller Portability - [P3]**
   - [ ] Feature flag `no_std` using `alloc` or fixed-capacity `heapless` buffers.
   - [ ] Verification on ARM Cortex-M7 (STM32H7) and ESP32-S3 targets.
@@ -47,7 +37,18 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ---
 
+## Future
+
+---
+
 ## Done
+
+- [x] **Phase 7: C-ABI FFI Layer, Shared Memory Audio Ingestion & C/C++/Python Bindings - [P3]**
+  - [x] C-compatible FFI interface (`sonon_engine_create`, `sonon_engine_destroy`, `sonon_shm_pump`, etc.) in `src/capi.rs` with safe handle registries in pure safe Rust (`#![deny(unsafe_code)]`).
+  - [x] Zero-copy POSIX shared memory ring buffer reader and writer (`/dev/shm/sonon_audio`) in `src/shm.rs` sustaining $> 4,000,000\text{ samples/sec}$ in debug and $> 15,700,000\text{ samples/sec}$ in release mode (> 980x real-time speed).
+  - [x] Lightweight Python wrapper (`bindings/python/sonon.py`) with NumPy float32 zero-copy passing and automated unit testing (`bindings/python/test_sonon_py.py`).
+  - [x] Modern C++20 header-only wrapper with RAII handle (`bindings/cpp/include/sonon.hpp`) and automated test (`bindings/cpp/test_sonon_cpp.cpp`).
+  - [x] Authored Phase 7 verification test suite (`tests/sonon_phase7_tests.rs`, 6/6 PASS).
 
 - [x] **Phase 6: Drone Acoustic Health Monitoring & Propeller Anomaly Diagnostics - [P3]**
   - [x] Blade damage and imbalance acoustic signature detection via rotational subharmonic energy emergence (`src/health.rs`).

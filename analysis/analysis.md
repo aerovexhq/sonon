@@ -234,6 +234,18 @@ Sonon interfaces directly with the Kestrel flight firmware and Chronos multi-wor
    - Emits standard MAVLink `NAMED_VALUE_FLOAT` (Message ID 251) telemetry packets (`SONON_HLTH`, `SONON_STAT`, `SON_IMB*`, `SON_BRG*`) directly to Kestrel flight firmware or ground control stations.
    - Sustains $> 4,380,000\text{ samples/sec}$ throughput (> 270x real-time speed).
 
+### 3.5 Zero-Copy POSIX Shared Memory Audio Ingestion & C/C++/Python Bindings (`src/shm.rs`, `src/capi.rs`)
+1. **Zero-Copy Shared Memory IPC (`/dev/shm/sonon_audio`)**:
+   - Fixed 64-byte binary header with 65,536-sample circular ring buffer mapped directly into RAM (Linux tmpfs).
+   - Monotonic 64-bit sequence counters (`write_head`, `read_head`) and bidirectional header status exchange (`health_score`, `worst_severity`, `last_keyword`).
+   - Implemented in 100% pure safe Rust (`#![deny(unsafe_code)]`), achieving $> 4,000,000\text{ samples/sec}$ in debug and $> 15,700,000\text{ samples/sec}$ in release mode (> 980x real-time).
+2. **C-ABI Foreign Function Interface (`src/capi.rs`)**:
+   - Thread-safe handle registries managing `SononEngine` and `ShmAudioChannel` instances without raw pointer dereferences.
+   - C-compatible exports: `sonon_engine_create`, `sonon_engine_destroy`, `sonon_shm_create`, `sonon_shm_pump`, `sonon_engine_update_motor_rpm`, `sonon_engine_get_health_score`.
+3. **Multi-Language Robotics Bindings**:
+   - **Python (`bindings/python/sonon.py`)**: Zero-copy NumPy array streaming, automatic channel initialization, and detection polling. Verified via automated unit tests (`test_sonon_py.py`).
+   - **Modern C++20 (`bindings/cpp/include/sonon.hpp`)**: Header-only RAII client (`sonon::SononClient`) supporting direct vector ingestion and health telemetry. Verified via automated tests (`test_sonon_cpp.cpp`).
+
 ---
 
 ## 4. Software Architecture & Implementation Details
@@ -267,9 +279,14 @@ modules/sonon/
 │   ├── aerossm.rs              # SincConvFrontend & AeroSsmCell selective state-space kernel
 │   ├── anticipatory.rs         # AnticipatoryPrefixDecoder & Wald's SPRT two-phase interlock
 │   ├── health.rs               # AcousticHealthMonitor: blade anomaly & bearing diagnostics
+│   ├── shm.rs                  # ShmAudioChannel: zero-copy /dev/shm ring buffer IPC
+│   ├── capi.rs                 # C-ABI FFI handle registry & streaming exports
 │   ├── vad.rs                  # EnergyVad: adaptive noise floor & hangover
 │   ├── dtw.rs                  # DtwMatcher: Sakoe-Chiba DTW, DBA & thresholding
 │   └── engine.rs               # SononEngine: streaming pipeline coordinator
+├── bindings/
+│   ├── python/                 # Python wrapper: sonon.py & test_sonon_py.py
+│   └── cpp/                    # C++20 header-only client: include/sonon.hpp
 └── tests/
     ├── sonon_dsp_tests.rs         # Baseline DSP verification suite (7/7 PASS)
     ├── sonon_phase2_tests.rs      # Phase 2 PCEN, DBA & 70% early prefix suite (6/6 PASS)
@@ -277,6 +294,7 @@ modules/sonon/
     ├── sonon_phase4_tests.rs      # Phase 4 Multi-mic spatial beamforming & DoA (6/6 PASS)
     ├── sonon_phase5_tests.rs      # Phase 5 AeroSSM & Anticipatory Prefix suite (5/5 PASS)
     ├── sonon_phase6_tests.rs      # Phase 6 Acoustic health & anomaly diagnostics (6/6 PASS)
+    ├── sonon_phase7_tests.rs      # Phase 7 C-ABI FFI & POSIX SHM IPC suite (6/6 PASS)
     ├── sonon_human_voice_tests.rs # Real human voice fixtures & 70% prefix test (5/5 PASS)
     └── fixtures/                  # Real operator 16 kHz WAV exemplars & streams
 ```
