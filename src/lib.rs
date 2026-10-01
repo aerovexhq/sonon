@@ -2,11 +2,13 @@
 //!
 //! Minimalist embedded acoustic DSP, Voice Activity Detection (VAD), Per-Channel Energy
 //! Normalization (PCEN), telemetry-coupled rotor notch filtering, spectral subtraction,
-//! multi-microphone spatial beamforming, and few-shot keyword/phrase spotting engine
-//! engineered in pure safe Rust for autonomous robotics.
+//! multi-microphone spatial beamforming, AeroSSM Structured State-Space Models, and
+//! anticipatory prefix flight interlock engine engineered in pure safe Rust for autonomous robotics.
 
 #![deny(unsafe_code)]
 
+pub mod aerossm;
+pub mod anticipatory;
 pub mod beamforming;
 pub mod dtw;
 pub mod engine;
@@ -19,6 +21,8 @@ pub mod stft;
 pub mod vad;
 pub mod window;
 
+pub use aerossm::{AeroSsmCell, SincConvFrontend};
+pub use anticipatory::{AnticipatoryPrefixDecoder, InterlockState, WaldSprtConfig};
 pub use beamforming::{
     ArrayGeometry, DelayAndSumBeamformer, DoaEstimator, GccPhatEstimator, Point3D, SPEED_OF_SOUND,
 };
