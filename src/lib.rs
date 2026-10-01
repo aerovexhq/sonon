@@ -12,6 +12,7 @@ pub mod anticipatory;
 pub mod beamforming;
 pub mod dtw;
 pub mod engine;
+pub mod health;
 pub mod mel;
 pub mod notch;
 pub mod pcen;
@@ -31,6 +32,10 @@ pub use dtw::{
     PhraseTemplate,
 };
 pub use engine::{FeatureMode, KeywordEvent, SononEngine};
+pub use health::{
+    AcousticHealthMonitor, AirframeHealthSnapshot, AnomalySeverity, MavlinkNamedValueFloat,
+    MotorHealthConfig, MotorHealthReport,
+};
 pub use mel::MelFilterbank;
 pub use notch::{BiquadNotchFilter, RotorHarmonicNotchBank};
 pub use pcen::{PcenConfig, PcenFilter};

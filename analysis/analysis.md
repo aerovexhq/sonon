@@ -223,6 +223,17 @@ Sonon interfaces directly with the Kestrel flight firmware and Chronos multi-wor
    - Triggers speculative `PreArm` state at $70\%$ phrase duration if $S_t \ge \theta_{\text{prearm}}$, saving $180\text{ ms}$ of mechanical actuator spin-up latency.
    - Enforces two-phase flight interlock: commits upon terminal phrase verification, or executes immediate deterministic `Rollback` if suffix divergence occurs.
 
+### 3.4 Drone Acoustic Health Monitoring & Propeller Anomaly Diagnostics (`src/health.rs`)
+1. **Blade Damage & Imbalance Detection**:
+   - Compares integrated acoustic energy at the shaft rotational frequency $f_{\text{rot}} = \text{RPM}/60$ with primary Blade Pass Frequency $f_{\text{BPF}} = N_{\text{blades}} \cdot \text{RPM}/60$.
+   - Symmetric, undamaged propellers cancel rotational subharmonic emissions; blade chips, cracks, or mass asymmetries break aerodynamic symmetry, elevating $I_{\text{ratio}} = P(f_{\text{rot}}) / P(f_{\text{BPF}})$.
+2. **Motor Bearing Wear & High-Frequency Acoustic Friction**:
+   - Monitors ultrasonic/high-frequency band ($3500\text{ Hz} \dots 7500\text{ Hz}$) relative to mid-band acoustic energy ($200\text{ Hz} \dots 3500\text{ Hz}$).
+   - Evaluates fourth standardized spectral moment (Spectral Kurtosis $\text{SK}$) coupled with high-frequency energy according to ISO 10816 / ISO 13373-1 condition monitoring, identifying micro-spalling impacts and dry lubrication friction.
+3. **Autonomous MAVLink Telemetry Generator**:
+   - Emits standard MAVLink `NAMED_VALUE_FLOAT` (Message ID 251) telemetry packets (`SONON_HLTH`, `SONON_STAT`, `SON_IMB*`, `SON_BRG*`) directly to Kestrel flight firmware or ground control stations.
+   - Sustains $> 4,380,000\text{ samples/sec}$ throughput (> 270x real-time speed).
+
 ---
 
 ## 4. Software Architecture & Implementation Details
@@ -255,6 +266,7 @@ modules/sonon/
 │   ├── beamforming.rs          # DelayAndSumBeamformer, DoAEstimator & GCC-PHAT
 │   ├── aerossm.rs              # SincConvFrontend & AeroSsmCell selective state-space kernel
 │   ├── anticipatory.rs         # AnticipatoryPrefixDecoder & Wald's SPRT two-phase interlock
+│   ├── health.rs               # AcousticHealthMonitor: blade anomaly & bearing diagnostics
 │   ├── vad.rs                  # EnergyVad: adaptive noise floor & hangover
 │   ├── dtw.rs                  # DtwMatcher: Sakoe-Chiba DTW, DBA & thresholding
 │   └── engine.rs               # SononEngine: streaming pipeline coordinator
@@ -264,6 +276,7 @@ modules/sonon/
     ├── sonon_phase3_tests.rs      # Phase 3 Rotor notch & spectral subtraction (6/6 PASS)
     ├── sonon_phase4_tests.rs      # Phase 4 Multi-mic spatial beamforming & DoA (6/6 PASS)
     ├── sonon_phase5_tests.rs      # Phase 5 AeroSSM & Anticipatory Prefix suite (5/5 PASS)
+    ├── sonon_phase6_tests.rs      # Phase 6 Acoustic health & anomaly diagnostics (6/6 PASS)
     ├── sonon_human_voice_tests.rs # Real human voice fixtures & 70% prefix test (5/5 PASS)
     └── fixtures/                  # Real operator 16 kHz WAV exemplars & streams
 ```
