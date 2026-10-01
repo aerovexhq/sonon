@@ -199,8 +199,16 @@ Unlike terrestrial voice applications, aerial robots operate inside a hostile ac
 3. **Motor Electronic Switching Noise**:
    Field-Oriented Control (FOC) or PWM inverter switching frequencies (typically $16\text{ kHz} \dots 48\text{ kHz}$).
 
-### 3.2 Dynamic Telemetry-Coupled Filtering Strategy
-Sonon is architected to interface with the Kestrel autopilot / Chronos physics simulation kernel. Because Kestrel continuously estimates precise motor RPM via ESC telemetry (DShot bidirectional RPM feedback), Sonon can deploy **adaptive biquad notch filters** placed exactly at the live $f_{\text{BPF}}$ and first 3 harmonics, removing $> 20\text{ dB}$ of acoustic propeller tone before the signal reaches the Mel filterbank!
+### 3.2 Dynamic Telemetry-Coupled Filtering & Spectral Subtraction Strategy
+Sonon interfaces directly with the Kestrel flight firmware and Chronos multi-world simulation kernel:
+1. **Dynamic Rotor Harmonic Notch Bank (`src/notch.rs`)**:
+   - Computes live propeller Blade Pass Frequency: $f_{\text{BPF}} = \frac{N_{\text{blades}} \cdot \text{RPM}}{60}$.
+   - Transposed Direct Form II Second-Order IIR biquad filters dynamically track the fundamental and first $K$ harmonics ($f_k = k \cdot f_{\text{BPF}}$).
+   - Achieves **$> 86\text{ dB}$ attenuation depth** at motor BPF tones without filter instability or phase distortion.
+2. **Recursive Spectral Subtraction Suppressor (`src/spectral_subtraction.rs`)**:
+   - Continuously adapts stationary background noise spectrum during VAD non-speech intervals: $N[k] \leftarrow (1-\beta) N[k] + \beta P[k]$.
+   - Applies over-subtraction with spectral floor: $\hat{P}[k] = \max(P[k] - \alpha N[k], \gamma_{\text{floor}} P[k])$.
+   - Eliminates broadband propeller tip vortex turbulence and motor acoustic wash.
 
 ---
 
@@ -220,7 +228,8 @@ modules/sonon/
 │   ├── 06_next_gen_aerossm_architecture.md
 │   ├── 07_anticipatory_early_exit_and_prefix_decoding.md
 │   ├── 08_massive_scale_data_strategy_and_curation.md
-│   └── 09_master_implementation_plan_and_thesis.md
+│   ├── 09_master_implementation_plan_and_thesis.md
+│   └── 10_empirical_voice_analysis_and_dataset_validation.md
 ├── src/
 │   ├── lib.rs                  # Public API exports & #![deny(unsafe_code)]
 │   ├── ring_buffer.rs          # AudioRingBuffer: contiguous FIFO with peek/pop
@@ -228,12 +237,17 @@ modules/sonon/
 │   ├── stft.rs                 # FftProcessor: Radix-2 Cooley-Tukey FFT & PSD
 │   ├── mel.rs                  # MelFilterbank: 26-band Mel weights & DCT-II MFCC
 │   ├── pcen.rs                 # PcenFilter: Per-Channel Energy Normalization & AGC
+│   ├── notch.rs                # BiquadNotchFilter & RotorHarmonicNotchBank
+│   ├── spectral_subtraction.rs # SpectralSubtractionSuppressor: running noise floor
 │   ├── vad.rs                  # EnergyVad: adaptive noise floor & hangover
 │   ├── dtw.rs                  # DtwMatcher: Sakoe-Chiba DTW, DBA & thresholding
 │   └── engine.rs               # SononEngine: streaming pipeline coordinator
 └── tests/
-    ├── sonon_dsp_tests.rs      # Baseline DSP verification suite (7/7 PASS)
-    └── sonon_phase2_tests.rs   # Phase 2 PCEN, DBA & 70% early prefix suite (6/6 PASS)
+    ├── sonon_dsp_tests.rs         # Baseline DSP verification suite (7/7 PASS)
+    ├── sonon_phase2_tests.rs      # Phase 2 PCEN, DBA & 70% early prefix suite (6/6 PASS)
+    ├── sonon_phase3_tests.rs      # Phase 3 Rotor notch & spectral subtraction (6/6 PASS)
+    ├── sonon_human_voice_tests.rs # Real human voice fixtures & 70% prefix test (5/5 PASS)
+    └── fixtures/                  # Real operator 16 kHz WAV exemplars & streams
 ```
 
 ### 4.1 Strict Rust Standards

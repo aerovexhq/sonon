@@ -2,9 +2,12 @@
 
 use crate::dtw::DtwMatcher;
 use crate::mel::MelFilterbank;
+use crate::notch::RotorHarmonicNotchBank;
 use crate::pcen::{PcenConfig, PcenFilter};
 use crate::ring_buffer::AudioRingBuffer;
+use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
+use crate::vad::EnergyVad;
 use crate::window::{Window, WindowType};
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +39,9 @@ pub struct SononEngine {
     fft: FftProcessor,
     mel: MelFilterbank,
     pcen: PcenFilter,
+    vad: EnergyVad,
+    notch_bank: Option<RotorHarmonicNotchBank>,
+    spectral_subtraction: Option<SpectralSubtractionSuppressor>,
     feature_mode: FeatureMode,
     pre_emphasis_alpha: f32,
     last_sample: f32,
@@ -64,6 +70,7 @@ impl SononEngine {
         let num_mel_filters = 26;
         let mel = MelFilterbank::new(num_mel_filters, frame_size, sample_rate, 80.0, sample_rate / 2.0);
         let pcen = PcenFilter::new(num_mel_filters, PcenConfig::default());
+        let vad = EnergyVad::new(2.5, 0.95, 5);
         let dtw = DtwMatcher::new();
 
         Self {
@@ -76,6 +83,9 @@ impl SononEngine {
             fft,
             mel,
             pcen,
+            vad,
+            notch_bank: None,
+            spectral_subtraction: None,
             feature_mode: FeatureMode::LogMel,
             pre_emphasis_alpha: 0.97,
             last_sample: 0.0,
@@ -84,6 +94,64 @@ impl SononEngine {
             max_history_frames: 64,
             total_samples_processed: 0,
         }
+    }
+
+    /// Enable drone rotor blade pass frequency (BPF) harmonic notch filtering.
+    pub fn enable_rotor_notch(&mut self, num_blades: usize, num_harmonics: usize, q_factor: f32) {
+        self.notch_bank = Some(RotorHarmonicNotchBank::new(
+            self.sample_rate,
+            num_blades,
+            num_harmonics,
+            q_factor,
+        ));
+    }
+
+    /// Disable rotor notch filtering.
+    pub fn disable_rotor_notch(&mut self) {
+        self.notch_bank = None;
+    }
+
+    /// Update rotor RPM from autopilot or ESC telemetry.
+    pub fn update_motor_rpm(&mut self, rpm: f32) {
+        if let Some(ref mut bank) = self.notch_bank {
+            bank.update_rpm(rpm);
+        }
+    }
+
+    /// Update multi-motor RPM telemetry (e.g., 4 motors on a quadcopter).
+    pub fn update_multi_motor_rpm(&mut self, motor_rpms: &[f32]) {
+        if let Some(ref mut bank) = self.notch_bank {
+            bank.update_multi_motor_rpm(motor_rpms);
+        }
+    }
+
+    /// Return active notch filter frequencies in Hz.
+    pub fn active_notch_frequencies(&self) -> Vec<f32> {
+        self.notch_bank
+            .as_ref()
+            .map(|b| b.active_frequencies())
+            .unwrap_or_default()
+    }
+
+    /// Enable spectral subtraction noise suppression.
+    pub fn enable_spectral_subtraction(&mut self, config: SpectralSubtractionConfig) {
+        let num_bins = self.frame_size / 2 + 1;
+        self.spectral_subtraction = Some(SpectralSubtractionSuppressor::new(num_bins, config));
+    }
+
+    /// Disable spectral subtraction noise suppression.
+    pub fn disable_spectral_subtraction(&mut self) {
+        self.spectral_subtraction = None;
+    }
+
+    /// Return reference to internal Voice Activity Detector.
+    pub fn vad(&self) -> &EnergyVad {
+        &self.vad
+    }
+
+    /// Return mutable reference to internal Voice Activity Detector.
+    pub fn vad_mut(&mut self) -> &mut EnergyVad {
+        &mut self.vad
     }
 
     /// Set feature normalization mode (LogMel or Pcen).
@@ -140,8 +208,19 @@ impl SononEngine {
     /// Returns any detected keyword events.
     pub fn ingest_samples(&mut self, samples: &[f32]) -> Vec<KeywordEvent> {
         let mut events = Vec::new();
-        self.ring_buffer.push_slice(samples);
-        self.total_samples_processed += samples.len() as u64;
+
+        // Apply rotor notch filtering to incoming samples if enabled
+        let mut filtered_samples;
+        let input_slice = if let Some(ref mut bank) = self.notch_bank {
+            filtered_samples = samples.to_vec();
+            bank.process_block(&mut filtered_samples);
+            &filtered_samples[..]
+        } else {
+            samples
+        };
+
+        self.ring_buffer.push_slice(input_slice);
+        self.total_samples_processed += input_slice.len() as u64;
 
         let mut frame_buf = vec![0.0f32; self.frame_size];
 
@@ -162,11 +241,19 @@ impl SononEngine {
                 self.last_sample = prev;
             }
 
+            // Voice activity detection
+            let is_speech = self.vad.process_frame(&preemp);
+
             // Apply windowing function
             self.window.apply(&mut preemp);
 
             // Compute power spectrum
-            let power = self.fft.power_spectrum(&preemp);
+            let mut power = self.fft.power_spectrum(&preemp);
+
+            // Apply spectral subtraction noise suppression if enabled
+            if let Some(ref mut ss) = self.spectral_subtraction {
+                ss.process_spectrum(&mut power, is_speech);
+            }
 
             // Compute normalized filterbank energies and MFCCs
             let mfcc = match self.feature_mode {
@@ -213,13 +300,26 @@ impl SononEngine {
             return features;
         }
 
+        // Apply notch filtering if active
+        let mut filtered_samples;
+        let effective_samples = if let Some(ref bank) = self.notch_bank {
+            let mut b_clone = bank.clone();
+            filtered_samples = samples.to_vec();
+            b_clone.process_block(&mut filtered_samples);
+            &filtered_samples[..]
+        } else {
+            samples
+        };
+
         let mut pos = 0;
         let mut frame = vec![0.0f32; self.frame_size];
         let mut pcen_clone = self.pcen.clone();
         pcen_clone.reset();
 
-        while pos + self.frame_size <= samples.len() {
-            frame.copy_from_slice(&samples[pos..pos + self.frame_size]);
+        let mut ss_clone = self.spectral_subtraction.clone();
+
+        while pos + self.frame_size <= effective_samples.len() {
+            frame.copy_from_slice(&effective_samples[pos..pos + self.frame_size]);
 
             // Apply pre-emphasis
             if self.pre_emphasis_alpha > 0.0 {
@@ -232,7 +332,11 @@ impl SononEngine {
             }
 
             self.window.apply(&mut frame);
-            let power = self.fft.power_spectrum(&frame);
+            let mut power = self.fft.power_spectrum(&frame);
+
+            if let Some(ref mut ss) = ss_clone {
+                ss.process_spectrum(&mut power, true);
+            }
 
             let mfcc = match self.feature_mode {
                 FeatureMode::LogMel => {
@@ -253,23 +357,19 @@ impl SononEngine {
         features
     }
 
-    /// Mutable reference to internal PCEN filter.
-    pub fn pcen_mut(&mut self) -> &mut PcenFilter {
-        &mut self.pcen
-    }
-
-    /// Access internal DTW matcher.
-    pub fn dtw(&self) -> &DtwMatcher {
-        &self.dtw
-    }
-
-    /// Mutable access to internal DTW matcher.
-    pub fn dtw_mut(&mut self) -> &mut DtwMatcher {
-        &mut self.dtw
-    }
-
-    /// Return audio sample rate.
-    pub fn sample_rate(&self) -> f32 {
-        self.sample_rate
+    /// Clear internal state and history.
+    pub fn reset(&mut self) {
+        self.ring_buffer.clear();
+        self.pcen.reset();
+        self.vad = EnergyVad::new(2.5, 0.95, 5);
+        if let Some(ref mut bank) = self.notch_bank {
+            bank.reset();
+        }
+        if let Some(ref mut ss) = self.spectral_subtraction {
+            ss.reset();
+        }
+        self.feature_history.clear();
+        self.last_sample = 0.0;
+        self.total_samples_processed = 0;
     }
 }
