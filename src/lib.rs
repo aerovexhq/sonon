@@ -7,6 +7,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod aec;
 pub mod aerossm;
 pub mod anticipatory;
 pub mod beamforming;
@@ -19,6 +20,7 @@ pub mod mel;
 pub mod neuromorphic;
 pub mod notch;
 pub mod pcen;
+pub mod phonetic;
 pub mod ring_buffer;
 pub mod shm;
 pub mod spectral_subtraction;
@@ -26,6 +28,7 @@ pub mod stft;
 pub mod vad;
 pub mod window;
 
+pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aerossm::{AeroSsmCell, SincConvFrontend};
 pub use anticipatory::{AnticipatoryPrefixDecoder, InterlockState, WaldSprtConfig};
 pub use beamforming::{
@@ -47,6 +50,7 @@ pub use neuromorphic::{
 };
 pub use notch::{BiquadNotchFilter, RotorHarmonicNotchBank};
 pub use pcen::{PcenConfig, PcenFilter};
+pub use phonetic::{FormantTarget, G2pEngine, KlattSynthesizer, Phoneme, PhonemeSegment};
 pub use ring_buffer::AudioRingBuffer;
 pub use shm::{ShmAudioChannel, ShmHeader, DEFAULT_SHM_PATH};
 pub use spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};

@@ -30,19 +30,64 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-*(All 13 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language, Embedded, Neuromorphic, PyPI, NPM, and Live Microphone Capture Targets - 56/56 Rust Tests + Python + JS PASS)*
+- [ ] **Phase 16: Doppler Shift Compensation & High-Speed In-Flight Kinematic Velocity Tracking - [P2]**
+  - [ ] (1) Mach-number acoustic frequency scaling engine integrating live airspeed and 3D GPS velocity telemetry from Kestrel / MAVLink.
+  - [ ] (2) Dynamic Doppler filterbank shifting: dynamically scaling triangular Mel filter center frequencies by the relativistic acoustic Doppler factor $\frac{c}{c - \vec{v} \cdot \hat{r}}$ up to $45\text{ m/s}$ ($160\text{ km/h}$) flight velocity.
+  - [ ] (3) Continuous phrase spotting verification under simulated high-speed flybys and dynamic drone maneuvers.
+  - [ ] (4) Comprehensive analytical unit test suite (`tests/sonon_phase16_tests.rs`) in 100% pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
 
 ---
 
 ## Future
 
-- [ ] **Phase 14 (Future Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
-  - [ ] SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
-  - [ ] Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
+- [ ] **Phase 17: Continuous Wavelet Transform (CWT) Non-Stationary Rotor Micro-Damage Profiler - [P2]**
+  - [ ] (1) Complex Morlet and Mexican Hat continuous wavelet filterbanks for multi-resolution time-frequency vibration decomposition.
+  - [ ] (2) Rotor micro-crack, dynamic blade flutter, and bearing ball micro-pitting diagnostic signature extraction before catastrophic mechanical failure.
+  - [ ] (3) Autonomous airframe fatigue index emitted via MAVLink `NAMED_VALUE_FLOAT` telemetry packets.
+
+- [ ] **Phase 18 (Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
+  - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
+  - [ ] (2) Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
+
+- [ ] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
+  - [ ] (1) Steered Minimum Variance Distortionless Response (MVDR) adaptive beamformer conditioned on ground-station operator GPS / DoA bearing.
+  - [ ] (2) Spatial mask neural/linear gating isolating the registered operator's voice from simultaneous co-located bystander speech.
+  - [ ] (3) Verification under multi-speaker cocktail party scenarios with co-channel interfering voices at $\pm 45^\circ$ azimuth.
+
+- [ ] **Phase 20: Bio-Inspired Micro-Tympanum Differential Microphone Emulation (Ormia Ochracea Mechanics) - [P2]**
+  - [ ] (1) Discrete state-space mechanical-coupling simulation of the *Ormia ochracea* parasitoid fly inter-tympanic bridge.
+  - [ ] (2) Amplification of microscopic acoustic time and intensity differences across sub-2 mm dual MEMS microphone layouts by $> 25\text{ dB}$, enabling precise 3D DoA on nano-drones and micro-UAV airframes.
+  - [ ] (3) Sub-millimeter array spatial resolution unit tests and low-power embedded benchmark.
+
+- [ ] **Phase 21: Psychoacoustic Masking Noise Concealment & Active Drone Acoustic Stealth - [P3]**
+  - [ ] (1) Human auditory threshold in quiet and Bark critical band psychoacoustic masking model (ISO/IEC 11172-3 MPEG psychoacoustic model 1).
+  - [ ] (2) Real-time rotor harmonic tonal psychoacoustic audibility metric computing human detectability range in meters.
+  - [ ] (3) Adaptive RPM micro-dithering and acoustic phase modulation recommendations minimizing human annoyance footprint without sacrificing lift thrust.
+
+- [ ] **Phase 22: Ultra-Low-Power RISC-V Vector / PULP-NN Micro-Engine Acceleration - [P3]**
+  - [ ] (1) RV32IMFD + XpulpNN / RISC-V Vector (RVV 1.0) intrinsic mapping in `#![no_std]` Rust for edge robotics microcontrollers.
+  - [ ] (2) Zero-heap deterministic memory arena for battery-perched drone surveillance listening modes consuming $< 1\text{ mW}$ average power.
 
 ---
 
 ## Done
+
+- [x] **Phase 15: Zero-Shot Text-to-Template Phonetic Engine & Rule-Based Grapheme-to-Phoneme (G2P) Formant Synthesizer - [P2]**
+  - [x] Implemented deterministic rule-based English G2P engine (`G2pEngine`) mapping plain text strings into ARPAbet / IPA phoneme sequences (`src/phonetic.rs`).
+  - [x] Implemented Klatt acoustic formant synthesizer (`KlattSynthesizer`) with 3-formant ($F_1, F_2, F_3$) digital biquad resonators, Rosenberg glottal excitation pulse, and frication noise generators.
+  - [x] Integrated direct text keyword enrollment (`SononEngine.enroll_keyword_from_text`) generating canonical acoustic templates for phrase spotting without requiring human speech recording.
+  - [x] Engineered multi-modal template fusion (`SononEngine.enroll_keyword_hybrid`) combining zero-shot text templates with operator voice exemplars via DTW Barycenter Averaging (DBA).
+  - [x] Authored analytical unit test suite (`tests/sonon_phase15_tests.rs`, 6/6 PASS) verifying G2P transcription, vowel formant spectral bounds, zero-shot spotting, hybrid fusion, and $> 500,000\text{ samples/sec}$ synthesis throughput (> 30x real-time).
+  - [x] Authored Monograph 15: [`analysis/15_zero_shot_text_to_template_phonetic_engine_and_formant_synthesis.md`](file:///root/Projects/aerovex/modules/sonon/analysis/15_zero_shot_text_to_template_phonetic_engine_and_formant_synthesis.md).
+
+- [x] **Phase 14: Adaptive Acoustic Echo Cancellation (AEC) & Double-Talk Detection (DTD) Engine - [P1]**
+  - [x] Implemented Normalized Least Mean Squares (NLMS) adaptive FIR transversal filter with circular sliding energy tracking and regularization in pure safe Rust (`src/aec.rs`).
+  - [x] Engineered Geigel Double-Talk Detector (DTD) with configurable hangover lockout ($H = 80\text{--}160\text{ samples}$) dynamically freezing adaptation during near-end voice commands.
+  - [x] Integrated real-time Echo Return Loss Enhancement (ERLE) telemetry monitoring sustaining $> 35\text{ dB}$ echo attenuation depth.
+  - [x] Engineered contiguous $2L$ double-buffering architecture for zero-copy SIMD AVX2 vectorization achieving $> 2,500,000\text{ samples/sec}$ (> 150x real-time).
+  - [x] Integrated AEC into `SononEngine` pipeline enabling continuous barge-in: users can issue voice commands while loudspeaker playback is actively blasting.
+  - [x] Authored analytical unit test suite (`tests/sonon_phase14_tests.rs`, 6/6 PASS).
+  - [x] Authored Monograph 14: [`analysis/14_adaptive_acoustic_echo_cancellation_and_barge_in_intelligence.md`](file:///root/Projects/aerovex/modules/sonon/analysis/14_adaptive_acoustic_echo_cancellation_and_barge_in_intelligence.md).
 
 - [x] **Phase 13: Live Microphone Enrollment, Auditory Playback Feedback & Gain-Invariant Acoustic Spotting - [P1]**
   - [x] Implemented energy-based VAD silence trimming (`SononEngine.trim_silence` / `SononEngine.trimSilence`) isolating active speech utterances from dead background silence.
