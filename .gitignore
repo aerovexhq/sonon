@@ -2,3 +2,23 @@
 target/
 Cargo.lock
 .DS_Store
+
+# Strict Voice Privacy: Never commit audio or video recordings
+*.wav
+*.mp4
+*.m4a
+*.aac
+*.ogg
+*.flac
+*.webm
+tests/fixtures/
+fixtures/
+
+# Packaging artifacts
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+node_modules/
+package-lock.json
