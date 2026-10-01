@@ -30,9 +30,10 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 2: Dynamic Time Warping (DTW) Sakoe-Chiba Band Pruning, Multi-Exemplar Template Averaging & Adaptive Threshold Tuning - [P1]**
+- [ ] **Phase 2: Dynamic Time Warping (DTW) Sakoe-Chiba Band Pruning, Multi-Exemplar DBA Template Averaging & Per-Channel Energy Normalization (PCEN) - [P1]**
   - [ ] Implement Sakoe-Chiba global path constraint band with configurable radius $R$, reducing DTW computational complexity from $O(N \cdot M)$ to $O(N \cdot R)$ and accelerating long-keyword matching.
   - [ ] Implement multi-exemplar template clustering and soft DTW barycenter averaging (DBA) to fuse 3-5 voice recordings into a robust reference template.
+  - [ ] Implement Per-Channel Energy Normalization (`PcenFilter`) with adaptive recursive noise smoothing ($s \approx 0.025$), exponent compression ($r \approx 0.25$), and feed-forward gain control for drone noise immunity.
   - [ ] Implement adaptive distance threshold calibration based on exemplar self-similarity and ambient SNR.
   - [ ] Author automated verification test suite verifying Sakoe-Chiba constraint bounds and benchmarking throughput speedup.
 
@@ -71,6 +72,13 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 ---
 
 ## Done
+
+- [x] **Phase 1.5: World-Class Wake-Word & Speech Recognition Deep Research Monograph Suite (`analysis/`)**
+  - [x] **Vocal Acoustics & Biomechanics Monograph (`analysis/01_vocal_acoustics_and_biomechanics.md`)**: Formulated subglottal pressure aerodynamics, Ishizaka-Flanagan two-mass vocal fold model, Fant source-filter formulation, $-6\text{ dB/octave}$ radiated speech tilt, quarter-wave acoustic tube resonators, formant perturbation theory, and complete phoneme taxonomy.
+  - [x] **Speaker Variability, Accents & Prosody Monograph (`analysis/02_speaker_variability_accents_and_prosody.md`)**: Formulated vocal tract length scaling laws ($L_{\text{tract}} \approx 17.5\text{ cm} \to 11.0\text{ cm}$), VTLN frequency warping, $F_0$ distributions, jitter/shimmer/HNR, phonation regimes, English regional dialect shifts, 6-language L2 phonological transfer matrix, and drone rotor Lombard effect dynamics (+17 dB SPL gain, $+180\text{ Hz } F_1$ elevation, spectral tilt flattening, vowel stretching).
+  - [x] **Acoustic Environmental & Hardware Transduction Monograph (`analysis/03_acoustic_environmental_and_hardware_factors.md`)**: Formulated MEMS/ECM/dynamic transducer physics, polar patterns, proximity effect bass boost ($+20\text{ dB}$ at $5\text{ cm}$), transducer AOP clipping, drone BPF harmonics ($f_{\text{BPF}} = B \cdot \text{RPM} / 60$), Gutin-Deming loading dipoles, inverse-square propagation ($-25\text{ dB}$ SNR at $10\text{ m}$), $25\text{ m/s}$ Doppler shifts ($+7.8\%$), and Sabine reverberation time ($T_{60}$) forward masking.
+  - [x] **Compact Embedded KWS Architectures Monograph (`analysis/04_compact_embedded_kws_architectures.md`)**: Formulated microcontroller constraints ($< 50\text{ KB RAM}$, $< 50\text{ MIPS}$), Sakoe-Chiba DTW pruning corridor ($|i - j| \le R$, $79\%$ compute reduction), DTW Barycenter Averaging (DBA), Depthwise Separable CNNs (DS-CNN, $87\%$ FLOP reduction), TC-ResNet-8 dilated 1D temporal convolutions ($420\text{ kMACs/sec}$), streaming unidirectional GRUs, symmetric INT8 integer-only arithmetic, and deterministic Rust memory arena architectures.
+  - [x] **Scalable Hierarchical Wake-Word Cascade Monograph (`analysis/05_scalable_hierarchical_kws_cascade.md`)**: Formulated multi-tier cascade (Stage 0 $< 10\text{ }\mu\text{W}$ analog gate $\to$ Stage 1 $10\text{ MIPS}$ streaming micro-KWS $\to$ Stage 2 $100\text{ MIPS}$ streaming Conformer verifier $\to$ Stage 3 companion NPU intent parser), Per-Channel Energy Normalization (PCEN) adaptive gain control, SincNet learnable frontends, multi-condition data augmentation ($-15\text{ dB}$ rotor noise, synthetic Lombard, 5,000 RIR virtual spaces, SpecAugment), DET curve optimization, and sub-$35\text{ ms}$ latency-to-fire.
 
 - [x] **Phase 1: Sonon Core Acoustic Signal Processing Pipeline & Few-Shot Keyword Spotting Engine Baseline**
   - [x] **Contiguous Audio Ring Buffer (`src/ring_buffer.rs`)**: High-throughput circular sample buffer with bounded capacity and overwrite-oldest semantics for uninterrupted streaming ingestion.

@@ -211,7 +211,12 @@ modules/sonon/
 ├── Cargo.toml                  # Manifest: pure safe Rust, serde dependencies
 ├── todo.md                     # Sonon engineering task registry & roadmap
 ├── analysis/
-│   └── analysis.md             # This comprehensive architectural blueprint
+│   ├── analysis.md             # Master architectural blueprint
+│   ├── 01_vocal_acoustics_and_biomechanics.md
+│   ├── 02_speaker_variability_accents_and_prosody.md
+│   ├── 03_acoustic_environmental_and_hardware_factors.md
+│   ├── 04_compact_embedded_kws_architectures.md
+│   └── 05_scalable_hierarchical_kws_cascade.md
 ├── src/
 │   ├── lib.rs                  # Public API exports & #![deny(unsafe_code)]
 │   ├── ring_buffer.rs          # AudioRingBuffer: circular FIFO sample buffer
@@ -238,3 +243,46 @@ In compliance with Aerovex Tier 1 Ecosystem Decoupling:
 - **Zero Workstation Coupling**: Sonon does not depend on Tauri, React, CesiumJS, or Go backend servers.
 - **Independent Release Lifecycle**: Deployed as a standalone crate (`sonon`) on crates.io and standalone Git repository (`git@github.com:aerovexhq/sonon.git`).
 - **Autopilot Integration**: Emits lightweight `KeywordEvent` structs that can be forwarded directly over MAVLink `COMMAND_LONG` or ROS 2 Zenoh topics to Kestrel.
+
+---
+
+## 6. World-Class Wake-Word & Speech Recognition Research Suite
+
+Sonon maintains an exhaustive, industry-grade mathematical and empirical research library located within `modules/sonon/analysis/`:
+
+1. **[01. Vocal Acoustics & Biomechanics of Human Speech Production](file:///root/Projects/aerovex/modules/sonon/analysis/01_vocal_acoustics_and_biomechanics.md)**:
+   - Aerodynamic driving forces, subglottal pressure $P_{\text{sub}}$, and Bernoulli effect in vocal fold adduction.
+   - Ishizaka-Flanagan two-mass vocal fold model and glottal flow derivative $\dot{u}_g(t)$.
+   - Source-filter acoustic model (Fant), $-6\text{ dB/octave}$ radiated speech tilt, and pre-emphasis filter design.
+   - Vocal tract wave equations, quarter-wave resonator physics, formant perturbations (Stevens & House), and complete phoneme taxonomy.
+
+2. **[02. Inter-Speaker Variability, Accents, Dialects, and Prosody](file:///root/Projects/aerovex/modules/sonon/analysis/02_speaker_variability_accents_and_prosody.md)**:
+   - Anatomical vocal tract length scaling laws ($L_{\text{tract}} \approx 17.5\text{ cm}$ male, $14.5\text{ cm}$ female, $11\text{ cm}$ child) and VTLN bilinear frequency warping.
+   - Micro-perturbation dynamics: pitch $F_0$ distributions, acoustic jitter, shimmer, HNR, and phonation regimes (modal, fry, breathy, pressed).
+   - Regional English dialect shifts (rhoticity, cot-caught merger, Northern Cities shift, flapping, T-glottalization).
+   - Non-native L2 phonological transfer matrix (Spanish, Indian, East Asian, Japanese, Slavic, Arabic).
+   - The Lombard effect in drone rotor noise: $+17\text{ dB}$ vocal SPL gain, $F_0$ pitch elevation, $+180\text{ Hz } F_1$ jaw shift, spectral tilt flattening, and vowel duration stretching.
+
+3. **[03. Acoustic Environmental, Aeroacoustic, and Hardware Transduction Factors](file:///root/Projects/aerovex/modules/sonon/analysis/03_acoustic_environmental_and_hardware_factors.md)**:
+   - Microphonic transduction physics: MEMS capacitive diaphragms vs. ECM vs. dynamic coils.
+   - Polar patterns, off-axis rejection, and proximity effect ($+20\text{ dB}$ bass boost at $5\text{ cm}$).
+   - Transducer Acoustic Overload Point (AOP), saturation, clipping, and ADC anti-aliasing.
+   - Drone aeroacoustic noise generation: Blade Pass Frequencies ($f_{\text{BPF}} = B \cdot \text{RPM} / 60$), Gutin-Deming rotational loading dipoles, tip vortex broadband turbulence, motor PWM EMI.
+   - Free-field propagation loss ($-20\text{ dB}$ at $10\text{ m}$ $\implies -25\text{ dB}$ SNR), atmospheric absorption, and high-speed flight Doppler shifts ($+7.8\%$ at $25\text{ m/s}$).
+   - Room Impulse Response (RIR) modeling, Sabine's reverberation time $T_{60}$, comb filtering, and forward temporal smearing.
+
+4. **[04. Ultra-Compact Embedded Wake-Word Architectures for Edge Hardware](file:///root/Projects/aerovex/modules/sonon/analysis/04_compact_embedded_kws_architectures.md)**:
+   - Hardware constraints on ARM Cortex-M4/M7 microcontrollers: $< 50\text{ KB RAM}$, $< 50\text{ MIPS}$, $< 50\text{ mW}$.
+   - Pruned Continuous DTW: Sakoe-Chiba band corridor ($|i - j| \le R$) cutting operations by $79\%$; DTW Barycenter Averaging (DBA) for robust template fusion.
+   - Depthwise Separable CNNs (DS-CNN): 2D conv factorization yielding $87\%$ FLOP reduction; sub-$25\text{ KB}$ INT8 topologies.
+   - Temporal 1D ResNets (TC-ResNet-8): Dilated temporal convolutions spanning $1.6\text{ s}$ receptive field with $420\text{ kMACs/sec}$.
+   - Streaming Unidirectional GRUs: Hidden state $\mathbf{h}_t$ propagation with zero historical frame buffer.
+   - Symmetric INT8 fixed-point arithmetic using pure 32-bit integer MAC and bit shifts; zero runtime floating-point instructions.
+
+5. **[05. Scalable Hierarchical Wake-Word Cascade Systems: Micro-Edge to Companion AI](file:///root/Projects/aerovex/modules/sonon/analysis/05_scalable_hierarchical_kws_cascade.md)**:
+   - Multi-tier cascading pipeline: Stage 0 ($< 10\text{ }\mu\text{W}$ analog comparator) $\to$ Stage 1 ($10\text{ MIPS}, < 50\text{ KB}$ streaming micro-KWS) $\to$ Stage 2 ($100\text{ MIPS}, < 2\text{ MB}$ streaming Conformer / BC-ResNet-14 verifier) $\to$ Stage 3 (Companion edge NPU intent parser).
+   - Per-Channel Energy Normalization (PCEN): Adaptive AGC feed-forward gain loop replacing Log-Mel for $-25\text{ dB}$ SNR and dynamic motor RPM shifts.
+   - Learnable Frontends: SincNet parameterized sinc filters self-tuning to rotor harmonic notches.
+   - Multi-condition data augmentation: Rotor noise mixing down to $-15\text{ dB}$ SNR, synthetic Lombard simulation, RIR convolution across 5,000+ virtual rooms, SpecAugment.
+   - Detection Error Tradeoff (DET) optimization, target operating points (FRR $< 0.5\%$ for safety commands, FP/hr $< 0.02$ for mission state changes), and sub-$35\text{ ms}$ latency-to-fire.
+
