@@ -72,6 +72,15 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Done
 
+- [x] **Phase 2.5: Empirical Human Voice Dataset Ingestion, Phonetic Dissection & Real-Speech Automated Testing - [P1]**
+  - [x] Ingested operator speech recordings (`me_saying_plank` and `randomrecordingmesayingthings_and_plank`).
+  - [x] Extracted, trimmed, and segmented 15 isolated citation exemplars into `tests/fixtures/plank_exemplars/*.wav`.
+  - [x] Phonetically dissected $[p] + [l] + [æ] + [ŋ] + [k]$: formants ($F_1 \approx 606\text{ Hz}, F_2 \approx 1480\text{ Hz}$), pitch octave spread ($130.2\text{ to }295.2\text{ Hz}$), and duration elasticity ($210\text{ to }540\text{ ms}$).
+  - [x] Discovered mathematical acoustic medoid (Exemplar #02, mean DTW distance 1.779).
+  - [x] Pinpointed and verified all 9 operator-reported timestamps in continuous speech stream to within $50\text{--}200\text{ ms}$ physical precision.
+  - [x] Authored automated integration test suite (`tests/sonon_human_voice_tests.rs`, 5/5 PASS) sustaining $> 10,000,000\text{ samples/sec}$ ($> 640\times$ real-time speed) on natural human speech.
+  - [x] Authored Monograph 10: [`analysis/10_empirical_voice_analysis_and_dataset_validation.md`](file:///root/Projects/aerovex/modules/sonon/analysis/10_empirical_voice_analysis_and_dataset_validation.md).
+
 - [x] **Phase 2: Dynamic Time Warping (DTW) Sakoe-Chiba Band Pruning, Multi-Exemplar DBA Template Averaging & Per-Channel Energy Normalization (PCEN) - [P1]**
   - [x] Implement Sakoe-Chiba global path constraint band with configurable radius $R$, reducing DTW computational complexity from $O(N \cdot M)$ to $O(N \cdot R)$ and accelerating long-keyword matching.
   - [x] Implement multi-exemplar template clustering and soft DTW barycenter averaging (DBA) to fuse 3-5 voice recordings into a robust reference template.

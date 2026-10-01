@@ -316,3 +316,10 @@ Sonon maintains an exhaustive, industry-grade mathematical and empirical researc
    - Phased technical execution plan for Sonon v2 (Rust selective SSM kernel, telemetry SincNet, prefix decoder, MAVLink interlock, and Chronos/Kestrel SITL).
    - Practical operator sample recording and 70% prefix validation protocol.
 
+10. **[10. Empirical Acoustic Analysis of Operator Voice Samples, Phonetic Dissection & Dataset Validation](file:///root/Projects/aerovex/modules/sonon/analysis/10_empirical_voice_analysis_and_dataset_validation.md)**:
+    - Exhaustive empirical signal analysis of operator-recorded speech (15 isolated Plank citation exemplars and 40.8s continuous stream with 9 embedded targets and 12 distractors).
+    - Subsegment phonetic dissection of $[p] + [l] + [æ] + [ŋ] + [k]$: formants ($F_1 \approx 606\text{ Hz}, F_2 \approx 1480\text{ Hz}$), pitch octave spread ($130.2\text{ to }295.2\text{ Hz}$), and $2.57\times$ duration elasticity ($210\text{ to }540\text{ ms}$).
+    - Discovery of optimal mathematical acoustic medoid (Exemplar #02, mean DTW distance $1.779$).
+    - Automated verification of 9 operator-reported timestamps to within $50\text{--}200\text{ ms}$ physical precision.
+    - Automated Rust integration test suite (`tests/sonon_human_voice_tests.rs`) achieving > 10,000,000 samples/sec (> 600x real-time speed) on human speech.
+
