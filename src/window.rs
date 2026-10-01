@@ -80,6 +80,11 @@ impl Window {
         self.coefficients.len()
     }
 
+    /// Return true if the window is empty.
+    pub fn is_empty(&self) -> bool {
+        self.coefficients.is_empty()
+    }
+
     /// Return window type.
     pub fn window_type(&self) -> WindowType {
         self.window_type
