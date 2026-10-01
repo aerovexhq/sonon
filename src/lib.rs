@@ -2,8 +2,8 @@
 //!
 //! Minimalist embedded acoustic DSP, Voice Activity Detection (VAD), Per-Channel Energy
 //! Normalization (PCEN), telemetry-coupled rotor notch filtering, spectral subtraction,
-//! multi-microphone spatial beamforming, AeroSSM Structured State-Space Models, and
-//! anticipatory prefix flight interlock engine engineered in pure safe Rust for autonomous robotics.
+//! multi-microphone spatial beamforming, AeroSSM Structured State-Space Models,
+//! neuromorphic silicon cochlea, and spiking wake-word spotting engineered in pure safe Rust for autonomous robotics.
 
 #![deny(unsafe_code)]
 
@@ -16,6 +16,7 @@ pub mod engine;
 pub mod fixed;
 pub mod health;
 pub mod mel;
+pub mod neuromorphic;
 pub mod notch;
 pub mod pcen;
 pub mod ring_buffer;
@@ -41,6 +42,9 @@ pub use health::{
     MotorHealthConfig, MotorHealthReport,
 };
 pub use mel::MelFilterbank;
+pub use neuromorphic::{
+    GammatoneFilter, NeuromorphicCochlea, SpikeEvent, SpikingKwsCell, SpikingKwsConfig,
+};
 pub use notch::{BiquadNotchFilter, RotorHarmonicNotchBank};
 pub use pcen::{PcenConfig, PcenFilter};
 pub use ring_buffer::AudioRingBuffer;

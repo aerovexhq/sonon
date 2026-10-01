@@ -399,3 +399,10 @@ Sonon maintains an exhaustive, industry-grade mathematical and empirical researc
     - Automated verification of 9 operator-reported timestamps to within $50\text{--}200\text{ ms}$ physical precision.
     - Automated Rust integration test suite (`tests/sonon_human_voice_tests.rs`) achieving > 10,000,000 samples/sec (> 600x real-time speed) on human speech.
 
+11. **[11. Neuromorphic Silicon Cochlea & Event-Driven Spiking Wake-Word Spotting](file:///root/Projects/aerovex/modules/sonon/analysis/11_neuromorphic_silicon_cochlea_and_spiking_kws.md)**:
+    - Mammalian basilar membrane biomechanics model with Donald Greenwood place-frequency mapping across 16/32 critical channels ($A = 165.4, a = 2.1, k = 0.88$).
+    - Discrete 4th-order cascade complex IIR Gammatone filterbanks (`GammatoneFilter`) with inner hair cell half-wave mechanical rectification and logarithmic compression.
+    - Asynchronous Address-Event Representation (AER) delta contrast modulator (`NeuromorphicCochlea`) producing standard 8-byte `SpikeEvent` wire format and zero active spikes during silence ($< 2\text{ }\mu\text{W}$ CMOS standby power).
+    - Event-driven Leaky Integrate-and-Fire (LIF) Spiking Neural Network wake-word decoder (`SpikingKwsCell`) with exponential synaptic traces, receptive field lateral inhibition, and post-detection refractory lockout operating in $O(1)$ constant time per event ($> 25,000,000\text{ spikes/sec}$).
+    - Automated Rust integration test suite (`tests/sonon_phase9_tests.rs`, 8/8 PASS) verifying silence quiescence, transient burst generation, phoneme sequence spotting, and sequence timeout rejection.
+

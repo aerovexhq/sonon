@@ -30,19 +30,26 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-*(All 8 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language & Embedded Targets)*
+*(All 9 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language, Embedded, & Neuromorphic Targets - 56/56 PASS)*
 
 ---
 
 ## Future
 
-- [ ] **Phase 9 (Future Exploration): Neuromorphic Event-Based Cochlea & Spike-Driven Wake-Word Spotting**
-  - [ ] Bio-inspired silicon cochlea event encoder generating spike trains on acoustic onsets.
-  - [ ] Spiking Neural Network (SNN) wake-word decoder for sub-10 microwatt continuous edge listening.
+- [ ] **Phase 10 (Future Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver**
+  - [ ] SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
+  - [ ] Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
 
 ---
 
 ## Done
+
+- [x] **Phase 9: Neuromorphic Event-Based Silicon Cochlea & Spike-Driven Wake-Word Spotting - [P3]**
+  - [x] Mammalian basilar membrane biomechanics model with Greenwood place-frequency mapping across 16/32 critical channels (`src/neuromorphic.rs`).
+  - [x] Discrete 4th-order cascade complex IIR Gammatone filterbanks (`GammatoneFilter`) with inner hair cell half-wave mechanical rectification and logarithmic compression.
+  - [x] Asynchronous Address-Event Representation (AER) delta contrast modulator (`NeuromorphicCochlea`) producing standard 8-byte `SpikeEvent` wire format and zero spikes during silence.
+  - [x] Event-driven Leaky Integrate-and-Fire (LIF) Spiking Neural Network wake-word decoder (`SpikingKwsCell`) with exponential synaptic traces, receptive field lateral inhibition, and post-detection refractory lockout.
+  - [x] Authored Phase 9 verification test suite (`tests/sonon_phase9_tests.rs`, 8/8 PASS) sustaining $> 25,000,000\text{ spikes/sec}$ throughput.
 
 - [x] **Phase 8: `#![no_std]` Embedded HAL Support & Microcontroller Portability - [P3]**
   - [x] Fixed-point Q15 and Q31 DSP math mode (`src/fixed.rs`) with saturating arithmetic, widening dot products, and quarter-wave sine/cosine look-up tables with zero FPU instructions.

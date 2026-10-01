@@ -178,6 +178,12 @@ pub struct StaticAudioBuffer<const N: usize> {
     count: usize,
 }
 
+impl<const N: usize> Default for StaticAudioBuffer<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> StaticAudioBuffer<N> {
     /// Construct a new empty static buffer.
     pub const fn new() -> Self {
@@ -214,6 +220,7 @@ impl<const N: usize> StaticAudioBuffer<N> {
     }
 
     /// Peek the oldest `out.len()` samples without removing them.
+    #[allow(clippy::needless_range_loop)]
     pub fn peek_slice(&self, out: &mut [Q15]) -> usize {
         let n = out.len().min(self.count);
         let mut curr = self.tail;
