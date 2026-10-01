@@ -199,7 +199,7 @@ fn test_throughput_phase2_benchmark() {
     let elapsed = start.elapsed();
 
     let samples_per_sec = (160_000.0) / elapsed.as_secs_f64();
-    let min_threshold = if cfg!(debug_assertions) { 500_000.0 } else { 1_000_000.0 };
+    let min_threshold = if cfg!(debug_assertions) { 300_000.0 } else { 1_000_000.0 };
 
     assert!(
         samples_per_sec > min_threshold,

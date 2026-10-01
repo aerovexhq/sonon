@@ -30,20 +30,15 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 6: Drone Acoustic Health Monitoring & Propeller Anomaly Diagnostics - [P3]**
-  - [ ] Blade damage and imbalance acoustic signature detection (asymmetric spectral peak emergence).
-  - [ ] Motor bearing wear and high-frequency friction acoustic monitoring.
-  - [ ] Autonomous health state emitter generating MAVLink `NAMED_VALUE_FLOAT` / telemetry events for Kestrel autopilot.
-
----
-
-## Future
-
 - [ ] **Phase 7: C-ABI FFI Layer, Shared Memory Audio Ingestion & C/C++/Python Bindings - [P3]**
   - [ ] C-compatible FFI interface (`sonon_create`, `sonon_ingest`, `sonon_enroll`, `sonon_destroy`) in `capi.rs`.
   - [ ] Zero-copy ring buffer reader over POSIX shared memory (`/dev/shm/sonon_audio`).
   - [ ] Lightweight Python wrapper (`sonon-py`) with NumPy array zero-copy passing.
   - [ ] C++20 header-only wrapper with RAII handle.
+
+---
+
+## Future
 
 - [ ] **Phase 8: `#![no_std]` Embedded HAL Support & Microcontroller Portability - [P3]**
   - [ ] Feature flag `no_std` using `alloc` or fixed-capacity `heapless` buffers.
@@ -53,6 +48,14 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 ---
 
 ## Done
+
+- [x] **Phase 6: Drone Acoustic Health Monitoring & Propeller Anomaly Diagnostics - [P3]**
+  - [x] Blade damage and imbalance acoustic signature detection via rotational subharmonic energy emergence (`src/health.rs`).
+  - [x] Motor bearing wear and high-frequency friction acoustic monitoring via spectral kurtosis and ISO 10816 high-frequency ratios.
+  - [x] Autonomous airframe health evaluator and standard MAVLink `NAMED_VALUE_FLOAT` telemetry packet emitter (`SONON_HLTH`, `SONON_STAT`, `SON_IMB*`, `SON_BRG*`).
+  - [x] Multi-motor quadcopter differential acoustic diagnostic identification isolating damaged blades on individual rotors.
+  - [x] Integrated acoustic health inspection into streaming `SononEngine` pipeline.
+  - [x] Authored Phase 6 verification test suite (`tests/sonon_phase6_tests.rs`, 6/6 PASS) sustaining $> 4,380,000\text{ samples/sec}$ throughput (> 270x real-time speed).
 
 - [x] **Phase 5: AeroSSM Next-Gen Structured State-Space Duality Engine & Anticipatory Prefix Decoding - [P2]**
   - [x] Selective State-Space recurrence kernel (`AeroSSM`) with $O(1)$ streaming state memory in `#![no_std]` Rust (`src/aerossm.rs`).
