@@ -1,6 +1,7 @@
-//! High-level streaming acoustic engine orchestrating VAD, MFCC/PCEN features, and keyword spotting.
+//! High-level streaming acoustic engine orchestrating VAD, MFCC/PCEN features, rotor notch filtering, and acoustic health monitoring.
 
 use crate::dtw::DtwMatcher;
+use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
 use crate::notch::RotorHarmonicNotchBank;
 use crate::pcen::{PcenConfig, PcenFilter};
@@ -42,6 +43,8 @@ pub struct SononEngine {
     vad: EnergyVad,
     notch_bank: Option<RotorHarmonicNotchBank>,
     spectral_subtraction: Option<SpectralSubtractionSuppressor>,
+    health_monitor: Option<AcousticHealthMonitor>,
+    latest_health_snapshot: Option<AirframeHealthSnapshot>,
     feature_mode: FeatureMode,
     pre_emphasis_alpha: f32,
     last_sample: f32,
@@ -86,6 +89,8 @@ impl SononEngine {
             vad,
             notch_bank: None,
             spectral_subtraction: None,
+            health_monitor: None,
+            latest_health_snapshot: None,
             feature_mode: FeatureMode::LogMel,
             pre_emphasis_alpha: 0.97,
             last_sample: 0.0,
@@ -111,10 +116,33 @@ impl SononEngine {
         self.notch_bank = None;
     }
 
+    /// Enable acoustic health monitoring and blade anomaly diagnostics.
+    pub fn enable_health_monitoring(&mut self, config: MotorHealthConfig) {
+        self.health_monitor = Some(AcousticHealthMonitor::new(
+            self.sample_rate,
+            self.frame_size,
+            config,
+        ));
+    }
+
+    /// Disable acoustic health monitoring.
+    pub fn disable_health_monitoring(&mut self) {
+        self.health_monitor = None;
+        self.latest_health_snapshot = None;
+    }
+
+    /// Return latest evaluated airframe health snapshot.
+    pub fn latest_health_snapshot(&self) -> Option<&AirframeHealthSnapshot> {
+        self.latest_health_snapshot.as_ref()
+    }
+
     /// Update rotor RPM from autopilot or ESC telemetry.
     pub fn update_motor_rpm(&mut self, rpm: f32) {
         if let Some(ref mut bank) = self.notch_bank {
             bank.update_rpm(rpm);
+        }
+        if let Some(ref mut monitor) = self.health_monitor {
+            monitor.update_motor_rpm(0, rpm);
         }
     }
 
@@ -122,6 +150,9 @@ impl SononEngine {
     pub fn update_multi_motor_rpm(&mut self, motor_rpms: &[f32]) {
         if let Some(ref mut bank) = self.notch_bank {
             bank.update_multi_motor_rpm(motor_rpms);
+        }
+        if let Some(ref mut monitor) = self.health_monitor {
+            monitor.update_motor_rpms(motor_rpms);
         }
     }
 
@@ -227,6 +258,12 @@ impl SononEngine {
         while self.ring_buffer.len() >= self.frame_size {
             if !self.ring_buffer.peek(self.frame_size, &mut frame_buf) {
                 break;
+            }
+
+            // Run acoustic health monitoring if enabled (using un-emphasized physical frame)
+            if let Some(ref mut monitor) = self.health_monitor {
+                let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+                self.latest_health_snapshot = Some(monitor.analyze_frame(&frame_buf, timestamp_sec));
             }
 
             // Apply pre-emphasis filter to boost high-frequency formants and consonants
