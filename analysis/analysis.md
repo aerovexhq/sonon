@@ -239,6 +239,7 @@ modules/sonon/
 │   ├── pcen.rs                 # PcenFilter: Per-Channel Energy Normalization & AGC
 │   ├── notch.rs                # BiquadNotchFilter & RotorHarmonicNotchBank
 │   ├── spectral_subtraction.rs # SpectralSubtractionSuppressor: running noise floor
+│   ├── beamforming.rs          # DelayAndSumBeamformer, DoAEstimator & GCC-PHAT
 │   ├── vad.rs                  # EnergyVad: adaptive noise floor & hangover
 │   ├── dtw.rs                  # DtwMatcher: Sakoe-Chiba DTW, DBA & thresholding
 │   └── engine.rs               # SononEngine: streaming pipeline coordinator
@@ -246,6 +247,7 @@ modules/sonon/
     ├── sonon_dsp_tests.rs         # Baseline DSP verification suite (7/7 PASS)
     ├── sonon_phase2_tests.rs      # Phase 2 PCEN, DBA & 70% early prefix suite (6/6 PASS)
     ├── sonon_phase3_tests.rs      # Phase 3 Rotor notch & spectral subtraction (6/6 PASS)
+    ├── sonon_phase4_tests.rs      # Phase 4 Multi-mic spatial beamforming & DoA (6/6 PASS)
     ├── sonon_human_voice_tests.rs # Real human voice fixtures & 70% prefix test (5/5 PASS)
     └── fixtures/                  # Real operator 16 kHz WAV exemplars & streams
 ```

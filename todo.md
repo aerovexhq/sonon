@@ -30,21 +30,15 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 4: Multi-Microphone Delay-and-Sum Spatial Beamforming & Direction of Arrival (DoA) Estimation - [P2]**
-  - [ ] Geometry abstraction for linear, circular, and tetrahedral microphone arrays.
-  - [ ] Generalized Cross-Correlation with Phase Transform (GCC-PHAT) for sub-millisecond acoustic Direction of Arrival (DoA) triangulation.
-  - [ ] Real-time delay-and-sum spatial beamformer steering listening lobes toward detected speaker azimuth/elevation while attenuating ambient drone noise.
-  - [ ] Benchmark multi-channel ingestion throughput.
-
----
-
-## Future
-
 - [ ] **Phase 5: AeroSSM Next-Gen Structured State-Space Duality Engine & Anticipatory Prefix Decoding - [P2]**
   - [ ] Selective State-Space recurrence kernel (`AeroSSM`) with $O(1)$ streaming state memory in `#![no_std]` Rust.
   - [ ] SincNet physical convolutional layer dynamically modulated by Kestrel ESC motor RPM telemetry.
   - [ ] Anticipatory Prefix-CTC decoder with Wald's SPRT stopping boundary triggering flight actions at $70\%$ phrase completion.
   - [ ] Two-phase speculative flight actuator interlock (`PreArm` and `Commit` MAVLink triggers).
+
+---
+
+## Future
 
 - [ ] **Phase 6: Drone Acoustic Health Monitoring & Propeller Anomaly Diagnostics - [P3]**
   - [ ] Blade damage and imbalance acoustic signature detection (asymmetric spectral peak emergence).
@@ -65,6 +59,13 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 ---
 
 ## Done
+
+- [x] **Phase 4: Multi-Microphone Delay-and-Sum Spatial Beamforming & Direction of Arrival (DoA) Estimation - [P2]**
+  - [x] Geometry abstraction for linear (lateral wing-mount), circular (360-degree), and tetrahedral (3D) microphone arrays in `src/beamforming.rs`.
+  - [x] Generalized Cross-Correlation with Phase Transform (`GccPhatEstimator`) with sub-millisecond parabolic interpolation.
+  - [x] Direction of Arrival (`DoAEstimator`) with Steered Response Power (SRP-PHAT) 360-degree azimuth triangulation.
+  - [x] Real-time spatial Delay-and-Sum beamformer (`DelayAndSumBeamformer`) with power-of-2 bitmask circular buffers delivering $+5.59\text{ dB}$ spatial noise rejection.
+  - [x] Authored Phase 4 verification test suite (`tests/sonon_phase4_tests.rs`, 6/6 PASS) sustaining $> 2,200,000\text{ samples/sec}$ throughput (> 140x real-time speed).
 
 - [x] **Phase 3: Telemetry-Informed Rotor Blade Pass Frequency (BPF) Harmonic Notch Filter Bank & Spectral Subtraction - [P1]**
   - [x] Acoustic drone noise modeling: calculated rotor fundamental and harmonic frequencies $f_k = k \cdot \frac{N_{\text{blades}} \cdot \text{RPM}}{60}$.

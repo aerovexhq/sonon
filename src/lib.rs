@@ -2,10 +2,12 @@
 //!
 //! Minimalist embedded acoustic DSP, Voice Activity Detection (VAD), Per-Channel Energy
 //! Normalization (PCEN), telemetry-coupled rotor notch filtering, spectral subtraction,
-//! and few-shot keyword/phrase spotting engine engineered in pure safe Rust for autonomous robotics.
+//! multi-microphone spatial beamforming, and few-shot keyword/phrase spotting engine
+//! engineered in pure safe Rust for autonomous robotics.
 
 #![deny(unsafe_code)]
 
+pub mod beamforming;
 pub mod dtw;
 pub mod engine;
 pub mod mel;
@@ -17,6 +19,9 @@ pub mod stft;
 pub mod vad;
 pub mod window;
 
+pub use beamforming::{
+    ArrayGeometry, DelayAndSumBeamformer, DoaEstimator, GccPhatEstimator, Point3D, SPEED_OF_SOUND,
+};
 pub use dtw::{
     calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded, DtwMatcher,
     PhraseTemplate,
