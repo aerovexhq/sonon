@@ -117,6 +117,9 @@ class SononEngine {
     this.buffer = [];
     this.history = [];
     this.totalSamples = 0;
+    this.dcXPrev = 0.0;
+    this.dcYPrev = 0.0;
+    this.dcR = 0.995;
 
     this.window = new Float32Array(frameSize);
     for (let i = 0; i < frameSize; i++) {
@@ -124,15 +127,31 @@ class SononEngine {
     }
   }
 
+  static removeDc(samples) {
+    const n = samples.length;
+    if (n === 0) return Array.from(samples);
+    let sum = 0.0;
+    for (let i = 0; i < n; i++) sum += samples[i];
+    const mean = sum / n;
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = samples[i] - mean;
+    return Array.from(out);
+  }
+
   extractFeatures(samples) {
     const features = [];
     let pos = 0;
     const n = samples.length;
 
+    // Remove local DC bias
+    let sampleSum = 0.0;
+    for (let i = 0; i < n; i++) sampleSum += samples[i];
+    const sampleMean = n > 0 ? sampleSum / n : 0.0;
+
     while (pos + this.frameSize <= n) {
       const frame = new Float32Array(this.frameSize);
       for (let i = 0; i < this.frameSize; i++) {
-        frame[i] = samples[pos + i] * this.window[i];
+        frame[i] = (samples[pos + i] - sampleMean) * this.window[i];
       }
 
       const mels = new Float32Array(this.numMfcc);
@@ -177,8 +196,17 @@ class SononEngine {
 
   static trimSilence(samples, sampleRate = 16000, frameSize = 160, thresholdRatio = 0.15, marginFrames = 5) {
     const nSamples = samples.length;
+    if (nSamples === 0) return Array.from(samples);
+
+    // 1. Remove DC bias
+    let totalSum = 0.0;
+    for (let i = 0; i < nSamples; i++) totalSum += samples[i];
+    const meanVal = totalSum / nSamples;
+    const acSamples = new Float32Array(nSamples);
+    for (let i = 0; i < nSamples; i++) acSamples[i] = samples[i] - meanVal;
+
     const numFrames = Math.floor(nSamples / frameSize);
-    if (numFrames === 0) return Array.from(samples);
+    if (numFrames === 0) return Array.from(acSamples);
 
     const energies = new Float32Array(numFrames);
     let maxEnergy = 0.0;
@@ -187,7 +215,7 @@ class SononEngine {
       let sumSq = 0.0;
       const offset = i * frameSize;
       for (let s = 0; s < frameSize; s++) {
-        const val = samples[offset + s];
+        const val = acSamples[offset + s];
         sumSq += val * val;
       }
       const rms = Math.sqrt(sumSq / frameSize);
@@ -195,28 +223,38 @@ class SononEngine {
       if (rms > maxEnergy) maxEnergy = rms;
     }
 
-    if (maxEnergy < 0.01) return Array.from(samples);
+    if (maxEnergy < 0.01) return Array.from(acSamples);
 
     const thresh = Math.max(0.015, maxEnergy * thresholdRatio);
     let firstSpeech = -1;
     let lastSpeech = -1;
 
     for (let i = 0; i < numFrames; i++) {
-      if (energies[i] >= thresh) {
+      // Discard boundary clicks at extreme frames
+      if (energies[i] >= thresh && i >= 2 && i <= numFrames - 3) {
         if (firstSpeech === -1) firstSpeech = i;
         lastSpeech = i;
       }
     }
 
-    if (firstSpeech === -1) return Array.from(samples);
+    if (firstSpeech === -1) return Array.from(acSamples);
 
     const startFrame = Math.max(0, firstSpeech - marginFrames);
     const endFrame = Math.min(numFrames, lastSpeech + marginFrames + 1);
 
     const startSample = startFrame * frameSize;
     const endSample = Math.min(nSamples, endFrame * frameSize);
+    const trimmed = Array.from(acSamples.slice(startSample, endSample));
 
-    return Array.from(samples.slice(startSample, endSample));
+    // Soft Hann fade to eliminate clicks
+    const fadeLen = Math.min(Math.floor(0.02 * sampleRate), Math.floor(trimmed.length / 4));
+    for (let i = 0; i < fadeLen; i++) {
+      const ramp = 0.5 * (1.0 - Math.cos((Math.PI * i) / Math.max(1, fadeLen)));
+      trimmed[i] *= ramp;
+      trimmed[trimmed.length - 1 - i] *= ramp;
+    }
+
+    return trimmed;
   }
 
   getLastDistance(keyword) {
@@ -234,11 +272,26 @@ class SononEngine {
 
   ingestSamples(samples) {
     if (!this.lastDistances) this.lastDistances = {};
+
+    // Real-time DC blocker filter
+    const dcR = this.dcR;
+    let xPrev = this.dcXPrev;
+    let yPrev = this.dcYPrev;
     for (let i = 0; i < samples.length; i++) {
-      this.buffer.push(samples[i]);
+      const x = samples[i];
+      const y = x - xPrev + dcR * yPrev;
+      this.buffer.push(y);
+      xPrev = x;
+      yPrev = y;
     }
+    this.dcXPrev = xPrev;
+    this.dcYPrev = yPrev;
+
     this.totalSamples += samples.length;
     const detections = [];
+
+    const maxTpl = this.templates.reduce((acc, t) => Math.max(acc, t.features.length), 50);
+    const maxHist = Math.max(250, maxTpl + 60);
 
     while (this.buffer.length >= this.frameSize) {
       const chunk = this.buffer.slice(0, this.frameSize);
@@ -249,8 +302,8 @@ class SononEngine {
         for (const f of feats) {
           this.history.push(f);
         }
-        if (this.history.length > 100) {
-          this.history = this.history.slice(-100);
+        if (this.history.length > maxHist) {
+          this.history = this.history.slice(-maxHist);
         }
 
         for (const tpl of this.templates) {
