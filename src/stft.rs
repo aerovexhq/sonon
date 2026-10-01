@@ -3,6 +3,7 @@
 use std::f32::consts::PI;
 
 /// Real-to-complex in-place Fast Fourier Transform (Radix-2 Cooley-Tukey).
+#[derive(Debug, Clone)]
 pub struct FftProcessor {
     size: usize,
 }
@@ -17,14 +18,11 @@ impl FftProcessor {
         Self { size }
     }
 
-    /// Compute power spectral density for a real input signal frame.
-    /// Returns a vector of length `size / 2 + 1` with magnitude squared.
-    pub fn power_spectrum(&self, input: &[f32]) -> Vec<f32> {
+    /// Compute in-place Radix-2 Cooley-Tukey complex FFT.
+    pub fn fft_in_place(&self, real: &mut [f32], imag: &mut [f32]) {
         let n = self.size;
-        assert_eq!(input.len(), n, "Input length must match FFT size");
-
-        let mut real = input.to_vec();
-        let mut imag = vec![0.0; n];
+        assert_eq!(real.len(), n, "Real slice must match FFT size");
+        assert_eq!(imag.len(), n, "Imaginary slice must match FFT size");
 
         // Bit-reversal permutation
         let mut j = 0;
@@ -72,6 +70,18 @@ impl FftProcessor {
             }
             len <<= 1;
         }
+    }
+
+    /// Compute power spectral density for a real input signal frame.
+    /// Returns a vector of length `size / 2 + 1` with magnitude squared.
+    pub fn power_spectrum(&self, input: &[f32]) -> Vec<f32> {
+        let n = self.size;
+        assert_eq!(input.len(), n, "Input length must match FFT size");
+
+        let mut real = input.to_vec();
+        let mut imag = vec![0.0; n];
+
+        self.fft_in_place(&mut real, &mut imag);
 
         // Compute one-sided power spectrum
         let num_bins = n / 2 + 1;
