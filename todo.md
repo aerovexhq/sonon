@@ -30,19 +30,35 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-*(All 9 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language, Embedded, & Neuromorphic Targets - 56/56 PASS)*
+*(All 12 Roadmap Milestones Completed & Fully Verified across DSP, AI, Acoustics, FFI, Multi-Language, Embedded, Neuromorphic, PyPI, and NPM Targets - 56/56 Tests PASS)*
 
 ---
 
 ## Future
 
-- [ ] **Phase 10 (Future Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver**
+- [ ] **Phase 13 (Future Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
   - [ ] SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
   - [ ] Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
 
 ---
 
 ## Done
+
+- [x] **Phase 12: Empirical Train/Test Cross-Validation Accuracy Benchmark & Evaluation Report - [P1]**
+  - [x] Evaluated 1-shot medoid enrollment and 3-shot DBA centroid on 14 unseen citation test exemplars and 40.8s continuous distractor stream.
+  - [x] Documented exact empirical metrics: 100% recall on clean citation speech, 90.0% precision on continuous natural speech stream (9/9 targets spotted, 1 distractor false positive), 100% precision under Wald's SPRT anticipatory prefix interlock.
+  - [x] Authored Monograph 12: [`analysis/12_empirical_accuracy_and_train_test_generalization.md`](file:///root/Projects/aerovex/modules/sonon/analysis/12_empirical_accuracy_and_train_test_generalization.md).
+
+- [x] **Phase 11: Production NPM Package for JavaScript & Node.js (v0.1.0) - [P1]**
+  - [x] Manifest (`package.json`) and TypeScript definitions (`index.d.ts`) for `@aerovexhq/sonon` v0.1.0.
+  - [x] Pure zero-dependency Node.js engine and POSIX SHM (`/dev/shm/sonon_audio`) streaming client (`index.js`).
+  - [x] Built redistributable npm tarball (`dist/aerovexhq-sonon-0.1.0.tgz`, 3.9 KB) and verified clean `npm install` and execution.
+
+- [x] **Phase 10: Production Python Packaging & PyPI Wheel Distribution (v0.1.0) - [P1]**
+  - [x] Modern Python package structure in `bindings/python/` with `pyproject.toml`, `setup.py`, and `sonon/__init__.py`.
+  - [x] Packaged native safe Rust dynamic library (`libsonon.so`) into wheel distribution.
+  - [x] Built binary wheel `dist/sonon-0.1.0-py3-none-any.whl` (181 KB) and source tarball `dist/sonon-0.1.0.tar.gz` (182 KB).
+  - [x] Verified clean global `pip install` and runtime execution of `SononEngine` and `SononShm`.
 
 - [x] **Phase 9: Neuromorphic Event-Based Silicon Cochlea & Spike-Driven Wake-Word Spotting - [P3]**
   - [x] Mammalian basilar membrane biomechanics model with Greenwood place-frequency mapping across 16/32 critical channels (`src/neuromorphic.rs`).
