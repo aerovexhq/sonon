@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sonon"
+version = "0.1.0"
+description = "High-Performance Robotics-Aimed Acoustic DSP, Few-Shot Phrase Spotting & Streaming Audio Engine"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT OR Apache-2.0" }
+authors = [
+    { name = "Aerovex Team", email = "dev@aerovex.net" },
+]
+keywords = ["audio", "dsp", "speech-recognition", "wake-word", "kws", "robotics", "drone"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
+
+[project.urls]
+Homepage = "https://github.com/aerovexhq/sonon"
+Repository = "https://github.com/aerovexhq/sonon"

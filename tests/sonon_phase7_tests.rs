@@ -137,6 +137,7 @@ fn test_capi_engine_lifecycle_and_rpm_telemetry() {
 
 #[test]
 fn test_capi_shm_audio_pump_integration() {
+    let _ = std::fs::remove_file(sonon::DEFAULT_SHM_PATH);
     let engine_h = sonon_engine_create(16000.0, 512, 160, 13);
     assert_ne!(engine_h, 0);
 

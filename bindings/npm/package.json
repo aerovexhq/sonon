@@ -1,0 +1,29 @@
+{
+  "name": "@aerovexhq/sonon",
+  "version": "0.1.0",
+  "description": "High-Performance Robotics-Aimed Acoustic DSP & Wake-Word Spotting Engine in JavaScript / Node.js",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "audio",
+    "dsp",
+    "speech-recognition",
+    "wake-word",
+    "kws",
+    "robotics",
+    "drone",
+    "shm"
+  ],
+  "author": "Aerovex Team <dev@aerovex.net>",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aerovexhq/sonon.git"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
