@@ -216,18 +216,24 @@ modules/sonon/
 │   ├── 02_speaker_variability_accents_and_prosody.md
 │   ├── 03_acoustic_environmental_and_hardware_factors.md
 │   ├── 04_compact_embedded_kws_architectures.md
-│   └── 05_scalable_hierarchical_kws_cascade.md
+│   ├── 05_scalable_hierarchical_kws_cascade.md
+│   ├── 06_next_gen_aerossm_architecture.md
+│   ├── 07_anticipatory_early_exit_and_prefix_decoding.md
+│   ├── 08_massive_scale_data_strategy_and_curation.md
+│   └── 09_master_implementation_plan_and_thesis.md
 ├── src/
 │   ├── lib.rs                  # Public API exports & #![deny(unsafe_code)]
-│   ├── ring_buffer.rs          # AudioRingBuffer: circular FIFO sample buffer
+│   ├── ring_buffer.rs          # AudioRingBuffer: contiguous FIFO with peek/pop
 │   ├── window.rs               # Window: precomputed Hann/Hamming/Blackman weights
 │   ├── stft.rs                 # FftProcessor: Radix-2 Cooley-Tukey FFT & PSD
 │   ├── mel.rs                  # MelFilterbank: 26-band Mel weights & DCT-II MFCC
+│   ├── pcen.rs                 # PcenFilter: Per-Channel Energy Normalization & AGC
 │   ├── vad.rs                  # EnergyVad: adaptive noise floor & hangover
-│   ├── dtw.rs                  # DtwMatcher: Dynamic Time Warping phrase matcher
+│   ├── dtw.rs                  # DtwMatcher: Sakoe-Chiba DTW, DBA & thresholding
 │   └── engine.rs               # SononEngine: streaming pipeline coordinator
 └── tests/
-    └── sonon_dsp_tests.rs      # Unit verification suite & 1M+ samples/sec benchmark
+    ├── sonon_dsp_tests.rs      # Baseline DSP verification suite (7/7 PASS)
+    └── sonon_phase2_tests.rs   # Phase 2 PCEN, DBA & 70% early prefix suite (6/6 PASS)
 ```
 
 ### 4.1 Strict Rust Standards
@@ -285,4 +291,28 @@ Sonon maintains an exhaustive, industry-grade mathematical and empirical researc
    - Learnable Frontends: SincNet parameterized sinc filters self-tuning to rotor harmonic notches.
    - Multi-condition data augmentation: Rotor noise mixing down to $-15\text{ dB}$ SNR, synthetic Lombard simulation, RIR convolution across 5,000+ virtual rooms, SpecAugment.
    - Detection Error Tradeoff (DET) optimization, target operating points (FRR $< 0.5\%$ for safety commands, FP/hr $< 0.02$ for mission state changes), and sub-$35\text{ ms}$ latency-to-fire.
+
+6. **[06. AeroSSM: Telemetry-Conditioned Structured State-Space Duality Architecture](file:///root/Projects/aerovex/modules/sonon/analysis/06_next_gen_aerossm_architecture.md)**:
+   - Continuous-time State Space Models ($h'(t) = A h(t) + B x(t)$) and HiPPO memory projections.
+   - Selective structured state-space scanning ($\Delta_k, B_k, C_k$ parameterized by input speech $x_k$), automatically resetting memory during noise and locking memory during phonemes.
+   - Dual-mode computational equivalence: $O(T \log T)$ parallel convolution for GPU training vs. $O(1)$ memory linear recurrence for edge streaming.
+   - Telemetry-coupled SincNet: Autopilot ESC motor RPM dynamically modulates zero-transmission acoustic filter notches at $f_{\text{BPF}}$.
+
+7. **[07. Anticipatory Early-Exit & Prefix Decoding: Sub-Utterance Command Execution](file:///root/Projects/aerovex/modules/sonon/analysis/07_anticipatory_early_exit_and_prefix_decoding.md)**:
+   - Information-theoretic proof of lexical perplexity collapse at $70\%$ phrase duration.
+   - Prefix-CTC forward variable $\alpha_t(s)$ evaluating token posteriors frame-by-frame.
+   - Abraham Wald's Sequential Probability Ratio Test (SPRT) stopping boundaries guaranteeing $< 0.02\text{ FP/hr}$.
+   - Two-phase Speculative Flight Actuator Interlock (`PreArm` vs `Commit` state machine), saving $180\text{ ms}$ of kinetic reaction time and absorbing brushless motor spin-up latency.
+
+8. **[08. Massive-Scale Acoustic Data Curation Strategy: High-Capital Blueprint](file:///root/Projects/aerovex/modules/sonon/analysis/08_massive_scale_data_strategy_and_curation.md)**:
+   - Anechoic wind-tunnel 64-channel Eigenmike spherical array program capturing full multi-rotor RPM matrices.
+   - Global 25,000-speaker multi-accent speech corpus spanning 60 languages/dialects across 6 standoff microphone channels.
+   - Induced Lombard reflex and cognitive stress recording laboratory.
+   - Exascale GPU FDTD wave acoustic simulation generating 10,000,000 virtual audio hours across 50,000 CAD spaces.
+   - Self-supervised foundation model pre-training (AeroWav2Vec-1B) with knowledge distillation into 42 KB INT8 student models.
+
+9. **[09. Master Thesis Synthesis & Step-by-Step Implementation Plan](file:///root/Projects/aerovex/modules/sonon/analysis/09_master_implementation_plan_and_thesis.md)**:
+   - Master thesis formulation unifying vocal biomechanics, aeroacoustics, selective SSMs, and anticipatory prefix decoding.
+   - Phased technical execution plan for Sonon v2 (Rust selective SSM kernel, telemetry SincNet, prefix decoder, MAVLink interlock, and Chronos/Kestrel SITL).
+   - Practical operator sample recording and 70% prefix validation protocol.
 
