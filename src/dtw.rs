@@ -140,6 +140,11 @@ impl DtwMatcher {
         self.templates.len()
     }
 
+    /// Clear all enrolled templates.
+    pub fn clear_templates(&mut self) {
+        self.templates.clear();
+    }
+
     /// Access enrolled templates slice.
     pub fn templates(&self) -> &[PhraseTemplate] {
         &self.templates

@@ -344,6 +344,101 @@ impl Phoneme {
             },
         }
     }
+
+    /// Returns true if this phoneme is a vowel.
+    pub fn is_vowel(self) -> bool {
+        matches!(
+            self,
+            Phoneme::AA
+                | Phoneme::AE
+                | Phoneme::AH
+                | Phoneme::AO
+                | Phoneme::AW
+                | Phoneme::AY
+                | Phoneme::EH
+                | Phoneme::ER
+                | Phoneme::EY
+                | Phoneme::IH
+                | Phoneme::IY
+                | Phoneme::OW
+                | Phoneme::OY
+                | Phoneme::UH
+                | Phoneme::UW
+        )
+    }
+
+    /// Returns true if this phoneme is a plosive stop consonant.
+    pub fn is_stop(self) -> bool {
+        matches!(
+            self,
+            Phoneme::B | Phoneme::D | Phoneme::G | Phoneme::P | Phoneme::T | Phoneme::K
+        )
+    }
+
+    /// Characteristic consonant burst / frication center frequency in Hz.
+    pub fn consonant_burst_frequency(self) -> f32 {
+        match self {
+            Phoneme::S | Phoneme::Z => 5800.0,
+            Phoneme::SH | Phoneme::ZH | Phoneme::CH | Phoneme::JH => 3200.0,
+            Phoneme::T | Phoneme::D => 4200.0,
+            Phoneme::K | Phoneme::G => 1900.0,
+            Phoneme::P | Phoneme::B => 800.0,
+            Phoneme::F | Phoneme::V | Phoneme::TH | Phoneme::DH | Phoneme::HH => 2400.0,
+            _ => 3000.0,
+        }
+    }
+
+    /// Returns initial and terminal formant targets for diphthong glides.
+    pub fn diphthong_targets(self) -> Option<(FormantTarget, FormantTarget)> {
+        match self {
+            Phoneme::EY => {
+                let mut start = self.acoustic_targets();
+                start.f1 = 540.0;
+                start.f2 = 1750.0;
+                let mut end = self.acoustic_targets();
+                end.f1 = 300.0;
+                end.f2 = 2200.0;
+                Some((start, end))
+            }
+            Phoneme::AY => {
+                let mut start = self.acoustic_targets();
+                start.f1 = 750.0;
+                start.f2 = 1150.0;
+                let mut end = self.acoustic_targets();
+                end.f1 = 320.0;
+                end.f2 = 2150.0;
+                Some((start, end))
+            }
+            Phoneme::OW => {
+                let mut start = self.acoustic_targets();
+                start.f1 = 580.0;
+                start.f2 = 950.0;
+                let mut end = self.acoustic_targets();
+                end.f1 = 340.0;
+                end.f2 = 900.0;
+                Some((start, end))
+            }
+            Phoneme::AW => {
+                let mut start = self.acoustic_targets();
+                start.f1 = 750.0;
+                start.f2 = 1200.0;
+                let mut end = self.acoustic_targets();
+                end.f1 = 350.0;
+                end.f2 = 950.0;
+                Some((start, end))
+            }
+            Phoneme::OY => {
+                let mut start = self.acoustic_targets();
+                start.f1 = 580.0;
+                start.f2 = 950.0;
+                let mut end = self.acoustic_targets();
+                end.f1 = 320.0;
+                end.f2 = 2150.0;
+                Some((start, end))
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Rule-based Grapheme-to-Phoneme (G2P) engine.
@@ -426,6 +521,17 @@ impl G2pEngine {
             "auto" => vec![Phoneme::AO, Phoneme::T, Phoneme::OW],
             "manual" => vec![Phoneme::M, Phoneme::AE, Phoneme::N, Phoneme::Y, Phoneme::UW, Phoneme::AH, Phoneme::L],
             "stabilize" => vec![Phoneme::S, Phoneme::T, Phoneme::EY, Phoneme::B, Phoneme::AH, Phoneme::L, Phoneme::AY, Phoneme::Z],
+            "falcon" => vec![Phoneme::F, Phoneme::AE, Phoneme::L, Phoneme::K, Phoneme::AH, Phoneme::N],
+            "jarvis" => vec![Phoneme::JH, Phoneme::AA, Phoneme::R, Phoneme::V, Phoneme::IH, Phoneme::S],
+            "alpha" => vec![Phoneme::AE, Phoneme::L, Phoneme::F, Phoneme::AH],
+            "bravo" => vec![Phoneme::B, Phoneme::R, Phoneme::AA, Phoneme::V, Phoneme::OW],
+            "home" => vec![Phoneme::HH, Phoneme::OW, Phoneme::M],
+            "recon" => vec![Phoneme::R, Phoneme::IY, Phoneme::K, Phoneme::AA, Phoneme::N],
+            "patrol" => vec![Phoneme::P, Phoneme::AH, Phoneme::T, Phoneme::R, Phoneme::OW, Phoneme::L],
+            "position" => vec![Phoneme::P, Phoneme::AH, Phoneme::Z, Phoneme::IH, Phoneme::SH, Phoneme::AH, Phoneme::N],
+            "reboot" => vec![Phoneme::R, Phoneme::IY, Phoneme::B, Phoneme::UW, Phoneme::T],
+            "engage" => vec![Phoneme::EH, Phoneme::N, Phoneme::G, Phoneme::EY, Phoneme::JH],
+            "disengage" => vec![Phoneme::D, Phoneme::IH, Phoneme::S, Phoneme::EH, Phoneme::N, Phoneme::G, Phoneme::EY, Phoneme::JH],
             _ => Self::rule_based_g2p(word),
         }
     }
@@ -575,7 +681,7 @@ impl G2pEngine {
     }
 }
 
-/// 2nd-order digital IIR formant resonator.
+/// 2nd-order digital IIR formant resonator with normalized DC unity gain.
 #[derive(Debug, Clone, Copy)]
 struct FormantResonator {
     a1: f32,
@@ -587,19 +693,26 @@ struct FormantResonator {
 
 impl FormantResonator {
     fn new(freq: f32, bw: f32, sample_rate: f32) -> Self {
-        let r = (-PI * bw / sample_rate).exp();
-        let theta = 2.0 * PI * freq / sample_rate;
-        let a1 = -2.0 * r * theta.cos();
-        let a2 = r * r;
-        let b0 = 1.0 - r; // Normalized unit peak gain
-
-        Self {
-            a1,
-            a2,
-            b0,
+        let mut res = Self {
+            a1: 0.0,
+            a2: 0.0,
+            b0: 1.0,
             y1: 0.0,
             y2: 0.0,
-        }
+        };
+        res.set_coefficients(freq, bw, sample_rate);
+        res
+    }
+
+    #[inline(always)]
+    fn set_coefficients(&mut self, freq: f32, bw: f32, sample_rate: f32) {
+        let f_clamped = freq.clamp(60.0, sample_rate * 0.48);
+        let b_clamped = bw.clamp(30.0, 1500.0);
+        let r = (-PI * b_clamped / sample_rate).exp();
+        let theta = 2.0 * PI * f_clamped / sample_rate;
+        self.a1 = -2.0 * r * theta.cos();
+        self.a2 = r * r;
+        self.b0 = (1.0 - 2.0 * r * theta.cos() + r * r).max(1e-6); // Unity DC gain (1.0)
     }
 
     #[inline(always)]
@@ -611,10 +724,56 @@ impl FormantResonator {
     }
 }
 
-/// Klatt acoustic formant speech synthesizer in pure safe Rust.
+/// Bandpass resonator for fricative, aspiration, and burst consonants.
+#[derive(Debug, Clone, Copy)]
+struct BandpassResonator {
+    a1: f32,
+    a2: f32,
+    b0: f32,
+    y1: f32,
+    y2: f32,
+}
+
+impl BandpassResonator {
+    fn new(freq: f32, bw: f32, sample_rate: f32) -> Self {
+        let mut res = Self {
+            a1: 0.0,
+            a2: 0.0,
+            b0: 0.1,
+            y1: 0.0,
+            y2: 0.0,
+        };
+        res.set_coefficients(freq, bw, sample_rate);
+        res
+    }
+
+    #[inline(always)]
+    fn set_coefficients(&mut self, freq: f32, bw: f32, sample_rate: f32) {
+        let f_clamped = freq.clamp(200.0, sample_rate * 0.48);
+        let b_clamped = bw.clamp(50.0, 3000.0);
+        let r = (-PI * b_clamped / sample_rate).exp();
+        let theta = 2.0 * PI * f_clamped / sample_rate;
+        self.a1 = -2.0 * r * theta.cos();
+        self.a2 = r * r;
+        self.b0 = (1.0 - r).max(1e-5); // Peak normalized gain
+    }
+
+    #[inline(always)]
+    fn process(&mut self, input: f32) -> f32 {
+        let out = self.b0 * input - self.a1 * self.y1 - self.a2 * self.y2;
+        self.y2 = self.y1;
+        self.y1 = out;
+        out
+    }
+}
+
+/// Advanced Klatt & Liljencrants-Fant (LF) acoustic formant speech synthesizer in pure safe Rust.
 pub struct KlattSynthesizer {
     sample_rate: f32,
     f0_base: f32,
+    speaking_rate: f32,
+    vocal_tract_scale: f32,
+    breathiness: f32,
 }
 
 impl KlattSynthesizer {
@@ -622,7 +781,10 @@ impl KlattSynthesizer {
     pub fn new(sample_rate: f32) -> Self {
         Self {
             sample_rate,
-            f0_base: 125.0, // Standard male fundamental pitch
+            f0_base: 125.0, // Standard male fundamental pitch in Hz
+            speaking_rate: 1.0,
+            vocal_tract_scale: 1.0,
+            breathiness: 0.03,
         }
     }
 
@@ -631,82 +793,241 @@ impl KlattSynthesizer {
         self.f0_base = f0.clamp(60.0, 400.0);
     }
 
+    /// Set speaking rate (speed multiplier, e.g. 0.8 to 1.5).
+    pub fn set_speaking_rate(&mut self, rate: f32) {
+        self.speaking_rate = rate.clamp(0.5, 2.5);
+    }
+
+    /// Set vocal tract length scaling factor (0.8 = deep/long tract, 1.2 = high/short tract).
+    pub fn set_vocal_tract_scale(&mut self, scale: f32) {
+        self.vocal_tract_scale = scale.clamp(0.6, 1.5);
+    }
+
+    /// Set vocal aspiration breathiness level (0.0 to 0.4).
+    pub fn set_breathiness(&mut self, breathiness: f32) {
+        self.breathiness = breathiness.clamp(0.0, 0.4);
+    }
+
     /// Synthesize continuous raw audio samples from a list of phoneme segments.
     pub fn synthesize(&self, segments: &[PhonemeSegment]) -> Vec<f32> {
+        if segments.is_empty() {
+            return Vec::new();
+        }
+
+        // 1. Calculate sample lengths per segment with speed scaling
+        let mut seg_spans = Vec::with_capacity(segments.len());
         let mut total_samples = 0usize;
         for s in segments {
-            total_samples += ((s.duration_ms / 1000.0) * self.sample_rate) as usize;
+            let dur_ms = (s.duration_ms / self.speaking_rate).max(20.0);
+            let samples = ((dur_ms / 1000.0) * self.sample_rate).max(16.0) as usize;
+            let start = total_samples;
+            let end = total_samples + samples;
+            seg_spans.push((s, start, end));
+            total_samples = end;
         }
 
-        let mut audio = Vec::with_capacity(total_samples);
-        if segments.is_empty() {
-            return audio;
+        if total_samples == 0 {
+            return Vec::new();
         }
+
+        // 2. Continuous parameter trajectory vectors
+        let mut f1_traj = vec![500.0f32; total_samples];
+        let mut f2_traj = vec![1500.0f32; total_samples];
+        let mut f3_traj = vec![2500.0f32; total_samples];
+        let mut b1_traj = vec![100.0f32; total_samples];
+        let mut b2_traj = vec![120.0f32; total_samples];
+        let mut b3_traj = vec![180.0f32; total_samples];
+        let mut voicing_traj = vec![0.0f32; total_samples];
+        let mut fric_traj = vec![0.0f32; total_samples];
+        let mut fric_fc_traj = vec![3000.0f32; total_samples];
+        let mut burst_amp_traj = vec![0.0f32; total_samples];
+        let mut burst_fc_traj = vec![3000.0f32; total_samples];
+        let mut stress_traj = vec![0.0f32; total_samples];
+
+        let scale = self.vocal_tract_scale;
+
+        // Populate segment nominal values
+        for &(seg, start, end) in &seg_spans {
+            let len = end - start;
+            let targets = seg.phoneme.acoustic_targets();
+            let diph = seg.phoneme.diphthong_targets();
+
+            for i in 0..len {
+                let idx = start + i;
+                let progress = (i as f32) / (len as f32);
+
+                if let Some((start_target, end_target)) = diph {
+                    // Diphthong continuous glide
+                    f1_traj[idx] = (start_target.f1 + progress * (end_target.f1 - start_target.f1)) * scale;
+                    f2_traj[idx] = (start_target.f2 + progress * (end_target.f2 - start_target.f2)) * scale;
+                    f3_traj[idx] = (start_target.f3 + progress * (end_target.f3 - start_target.f3)) * scale;
+                } else {
+                    f1_traj[idx] = targets.f1 * scale;
+                    f2_traj[idx] = targets.f2 * scale;
+                    f3_traj[idx] = targets.f3 * scale;
+                }
+
+                b1_traj[idx] = targets.b1;
+                b2_traj[idx] = targets.b2;
+                b3_traj[idx] = targets.b3;
+                stress_traj[idx] = if seg.stress > 0 { 1.0 } else { 0.0 };
+
+                if seg.phoneme.is_stop() {
+                    // Stop consonants: closure (silence) for 65%, burst for 15%, release for 20%
+                    let burst_start = (len as f32 * 0.65) as usize;
+                    let burst_end = (len as f32 * 0.80) as usize;
+                    if i < burst_start {
+                        voicing_traj[idx] = targets.voicing_amp * 0.3; // Low voicing bar for voiced stops
+                        fric_traj[idx] = 0.0;
+                    } else if i < burst_end {
+                        voicing_traj[idx] = 0.0;
+                        burst_amp_traj[idx] = 0.75;
+                        burst_fc_traj[idx] = seg.phoneme.consonant_burst_frequency();
+                    } else {
+                        voicing_traj[idx] = targets.voicing_amp * 0.5;
+                        fric_traj[idx] = 0.0;
+                    }
+                } else {
+                    voicing_traj[idx] = targets.voicing_amp;
+                    fric_traj[idx] = targets.friction_amp;
+                    fric_fc_traj[idx] = seg.phoneme.consonant_burst_frequency();
+                }
+            }
+        }
+
+        // 3. Coarticulation Smoothing across segment boundaries (30 ms window)
+        let smooth_samples = ((0.030 * self.sample_rate) as usize).min(total_samples / 4);
+        for k in 1..seg_spans.len() {
+            let boundary = seg_spans[k].1;
+            let w_start = boundary.saturating_sub(smooth_samples / 2);
+            let w_end = (boundary + smooth_samples / 2).min(total_samples);
+            let w_len = w_end - w_start;
+
+            if w_len > 1 {
+                let f1_a = f1_traj[w_start];
+                let f1_b = f1_traj[w_end - 1];
+                let f2_a = f2_traj[w_start];
+                let f2_b = f2_traj[w_end - 1];
+                let f3_a = f3_traj[w_start];
+                let f3_b = f3_traj[w_end - 1];
+                let v_a = voicing_traj[w_start];
+                let v_b = voicing_traj[w_end - 1];
+
+                for j in 0..w_len {
+                    let tau = (j as f32) / (w_len as f32);
+                    let alpha = 0.5 * (1.0 - (PI * tau).cos()); // S-curve fade
+                    let idx = w_start + j;
+                    f1_traj[idx] = f1_a + alpha * (f1_b - f1_a);
+                    f2_traj[idx] = f2_a + alpha * (f2_b - f2_a);
+                    f3_traj[idx] = f3_a + alpha * (f3_b - f3_a);
+                    voicing_traj[idx] = v_a + alpha * (v_b - v_a);
+                }
+            }
+        }
+
+        // 4. Cascade Vocal Tract Resonators (Continuous state across entire utterance)
+        let mut res1 = FormantResonator::new(f1_traj[0], b1_traj[0], self.sample_rate);
+        let mut res2 = FormantResonator::new(f2_traj[0], b2_traj[0], self.sample_rate);
+        let mut res3 = FormantResonator::new(f3_traj[0], b3_traj[0], self.sample_rate);
+        let mut res4 = FormantResonator::new(3500.0 * scale, 280.0, self.sample_rate);
+        let mut res_fric = BandpassResonator::new(fric_fc_traj[0], 1200.0, self.sample_rate);
+        let mut res_burst = BandpassResonator::new(3000.0, 1000.0, self.sample_rate);
 
         let mut glottal_phase = 0.0f32;
-        let mut noise_state = 123456789u64;
+        let mut noise_state = 12345678901234567u64;
+        let mut y_rad_prev = 0.0f32;
+        let mut audio = Vec::with_capacity(total_samples);
 
-        for s in segments {
-            let seg_samples = ((s.duration_ms / 1000.0) * self.sample_rate).max(1.0) as usize;
-            let target = s.phoneme.acoustic_targets();
+        for n in 0..total_samples {
+            let t = (n as f32) / self.sample_rate;
+            let t_norm = (n as f32) / (total_samples as f32);
 
-            // Set up formant resonators for F1, F2, F3
-            let mut res1 = FormantResonator::new(target.f1, target.b1, self.sample_rate);
-            let mut res2 = FormantResonator::new(target.f2, target.b2, self.sample_rate);
-            let mut res3 = FormantResonator::new(target.f3, target.b3, self.sample_rate);
-
-            // Subtle pitch intonation contour: slight declination across segment
-            let f0 = self.f0_base * if s.stress > 0 { 1.15 } else { 1.0 };
+            // Natural Macro-Prosody Intonation Arc:
+            // Starts slightly above base, arches upward in middle, declines toward end
+            let intonation = 1.06 + 0.14 * (PI * t_norm).sin() - 0.16 * t_norm;
+            let stress_boost = 1.0 + 0.18 * stress_traj[n];
+            let micro_jitter = 1.0 + 0.0035 * (2.0 * PI * 6.1 * t).sin();
+            let f0 = self.f0_base * intonation * stress_boost * micro_jitter;
             let f0_step = (f0 / self.sample_rate) * 2.0 * PI;
 
-            for n in 0..seg_samples {
-                // 1. Voicing excitation (Rosenberg glottal pulse)
-                let voiced_source = if target.voicing_amp > 0.0 {
-                    glottal_phase += f0_step;
-                    if glottal_phase >= 2.0 * PI {
-                        glottal_phase -= 2.0 * PI;
-                    }
-                    // Glottal waveform
-                    let p = glottal_phase / (2.0 * PI);
-                    if p < 0.4 {
-                        0.5 * (1.0 - (PI * p / 0.4).cos())
-                    } else if p < 0.6 {
-                        ((PI * (p - 0.4) / 0.4).cos()).max(0.0)
-                    } else {
-                        0.0
-                    }
-                } else {
-                    0.0
-                };
+            // Glottal phase advancement
+            glottal_phase += f0_step;
+            if glottal_phase >= 2.0 * PI {
+                glottal_phase -= 2.0 * PI;
+            }
 
-                // 2. Unvoiced noise excitation (LCG white noise)
-                noise_state = noise_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-                let unvoiced_noise = (((noise_state >> 33) as f32) / (u32::MAX as f32) - 0.5) * 2.0;
+            // Liljencrants-Fant (LF) inspired glottal flow derivative
+            let p = glottal_phase / (2.0 * PI);
+            let glottal_wave = if p < 0.65 {
+                (PI * p / 0.65).sin() - 0.35 * (2.0 * PI * p / 0.65).sin()
+            } else if p < 0.85 {
+                -0.90 * (PI * (p - 0.65) / 0.20).sin()
+            } else {
+                0.0
+            };
 
-                // 3. Combined source excitation
-                let excitation = target.voicing_amp * voiced_source
-                    + target.aspiration_amp * unvoiced_noise * 0.35;
+            // 64-bit LCG white noise generator
+            noise_state = noise_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let unvoiced_noise = (((noise_state >> 33) as f32) / (u32::MAX as f32) - 0.5) * 2.0;
 
-                // 4. Formant resonator cascade/parallel synthesis
-                let f1_out = res1.process(excitation);
-                let f2_out = res2.process(excitation);
-                let f3_out = res3.process(excitation);
+            // Voicing source excitation with aspiration breathiness
+            let v_amp = voicing_traj[n];
+            let asp_amp = self.breathiness;
+            let excitation = v_amp * glottal_wave + 0.02 * v_amp * unvoiced_noise + asp_amp * unvoiced_noise;
 
-                // High-frequency friction noise for sibilants and fricatives
-                let friction_out = target.friction_amp * unvoiced_noise * 0.4;
+            // Update vocal tract resonators dynamically
+            res1.set_coefficients(f1_traj[n], b1_traj[n], self.sample_rate);
+            res2.set_coefficients(f2_traj[n], b2_traj[n], self.sample_rate);
+            res3.set_coefficients(f3_traj[n], b3_traj[n], self.sample_rate);
 
-                let mixed = 0.50 * f1_out + 0.35 * f2_out + 0.20 * f3_out + friction_out;
+            // Cascade vocal tract processing: R1 -> R2 -> R3 -> R4
+            let r1 = res1.process(excitation);
+            let r2 = res2.process(r1);
+            let r3 = res3.process(r2);
+            let r4 = res4.process(r3);
 
-                // Soft boundary envelope (fade in / fade out at edges of segment)
-                let env = if n < 40 {
-                    (n as f32) / 40.0
-                } else if n + 40 >= seg_samples {
-                    ((seg_samples - n) as f32) / 40.0
-                } else {
-                    1.0
-                };
+            // Lip radiation impedance filter: 1 - 0.95 z^-1
+            let vocal_rad = r4 - 0.95 * y_rad_prev;
+            y_rad_prev = r4;
 
-                audio.push((mixed * env * 0.6).clamp(-1.0, 1.0));
+            // Fricative branch
+            let fric_amp = fric_traj[n];
+            let fric_val = if fric_amp > 0.001 {
+                res_fric.set_coefficients(fric_fc_traj[n], 1200.0, self.sample_rate);
+                fric_amp * res_fric.process(unvoiced_noise) * 0.45
+            } else {
+                0.0
+            };
+
+            // Stop burst branch
+            let burst_amp = burst_amp_traj[n];
+            let burst_val = if burst_amp > 0.001 {
+                res_burst.set_coefficients(burst_fc_traj[n], 900.0, self.sample_rate);
+                burst_amp * res_burst.process(unvoiced_noise) * 0.65
+            } else {
+                0.0
+            };
+
+            let mixed = 0.40 * vocal_rad + fric_val + burst_val;
+
+            // Master envelope fade-in (first 80 samples) and fade-out (last 80 samples)
+            let master_env = if n < 80 {
+                (n as f32) / 80.0
+            } else if n + 80 >= total_samples {
+                ((total_samples - n) as f32) / 80.0
+            } else {
+                1.0
+            };
+
+            audio.push(mixed * master_env);
+        }
+
+        // Peak normalization to 0.85 (-1.4 dBFS)
+        let peak = audio.iter().fold(0.0f32, |acc, &x| acc.max(x.abs()));
+        if peak > 0.001 {
+            let norm_gain = 0.85 / peak;
+            for sample in &mut audio {
+                *sample *= norm_gain;
             }
         }
 

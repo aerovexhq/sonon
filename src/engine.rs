@@ -430,6 +430,11 @@ impl SononEngine {
         self.dtw.add_template(name, features, threshold);
     }
 
+    /// Clear all enrolled keyword templates from the engine.
+    pub fn clear_keywords(&mut self) {
+        self.dtw.clear_templates();
+    }
+
     /// Enroll a keyword phrase template with explicit Sakoe-Chiba corridor band radius `R`.
     pub fn enroll_keyword_banded(
         &mut self,
