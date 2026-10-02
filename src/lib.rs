@@ -33,6 +33,7 @@ pub mod stft;
 pub mod tse;
 pub mod vad;
 pub mod wasm;
+pub mod wind;
 pub mod window;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
@@ -84,4 +85,8 @@ pub use tse::{
     TargetSoundExtractor, TseConfig, TseReport,
 };
 pub use vad::EnergyVad;
+pub use wind::{
+    AdaptiveRumbleFilter, AeroacousticWindSimulator, TurbulentBoundaryLayerSuppressor,
+    WindNoiseTelemetry, WindTurbulenceConfig,
+};
 pub use window::{Window, WindowType};

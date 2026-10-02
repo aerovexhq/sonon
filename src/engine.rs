@@ -16,6 +16,7 @@ use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtraction
 use crate::stft::FftProcessor;
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
 use crate::vad::EnergyVad;
+use crate::wind::{TurbulentBoundaryLayerSuppressor, WindNoiseTelemetry, WindTurbulenceConfig};
 use crate::window::{Window, WindowType};
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +72,8 @@ pub struct SononEngine {
     latest_stealth_report: Option<AcousticStealthReport>,
     pulp_model: Option<PulpPowerModel>,
     latest_pulp_telemetry: Option<PulpTelemetry>,
+    wind_suppressor: Option<TurbulentBoundaryLayerSuppressor>,
+    latest_wind_telemetry: Option<WindNoiseTelemetry>,
     current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
 }
@@ -131,6 +134,8 @@ impl SononEngine {
             latest_stealth_report: None,
             pulp_model: None,
             latest_pulp_telemetry: None,
+            wind_suppressor: None,
+            latest_wind_telemetry: None,
             current_motor_rpms: Vec::new(),
             num_mel_filters,
         }
@@ -502,6 +507,84 @@ impl SononEngine {
     /// Access latest evaluated PULP surveillance telemetry.
     pub fn latest_pulp_telemetry(&self) -> Option<&PulpTelemetry> {
         self.latest_pulp_telemetry.as_ref()
+    }
+
+    /// Enable aerodynamic wind buffeting and turbulent boundary layer (TBL) suppression.
+    pub fn enable_wind_suppression(&mut self, config: WindTurbulenceConfig) {
+        self.wind_suppressor = Some(TurbulentBoundaryLayerSuppressor::new(config));
+    }
+
+    /// Disable aerodynamic wind suppression.
+    pub fn disable_wind_suppression(&mut self) {
+        self.wind_suppressor = None;
+        self.latest_wind_telemetry = None;
+    }
+
+    /// Access reference to active turbulent boundary layer wind suppressor if enabled.
+    pub fn wind_suppressor(&self) -> Option<&TurbulentBoundaryLayerSuppressor> {
+        self.wind_suppressor.as_ref()
+    }
+
+    /// Access mutable reference to active turbulent boundary layer wind suppressor if enabled.
+    pub fn wind_suppressor_mut(&mut self) -> Option<&mut TurbulentBoundaryLayerSuppressor> {
+        self.wind_suppressor.as_mut()
+    }
+
+    /// Return latest evaluated wind buffeting and TBL telemetry snapshot.
+    pub fn latest_wind_telemetry(&self) -> Option<&WindNoiseTelemetry> {
+        self.latest_wind_telemetry.as_ref()
+    }
+
+    /// Update flight vehicle forward airspeed (in m/s) to tune the adaptive aerodynamic rumble filter.
+    pub fn update_flight_airspeed(&mut self, airspeed_mps: f32) {
+        if let Some(ref mut wind) = self.wind_suppressor {
+            wind.update_airspeed(airspeed_mps);
+        }
+    }
+
+    /// Process dual-microphone audio streams through the turbulent boundary layer suppressor,
+    /// separating aerodynamic convective pseudosound from true propagating acoustic sound waves,
+    /// and feeding the restored speech stream directly into the keyword spotter.
+    pub fn process_dual_mic_wind_suppression(
+        &mut self,
+        mic1: &[f32],
+        mic2: &[f32],
+    ) -> Result<Vec<KeywordEvent>, String> {
+        if mic1.len() != mic2.len() {
+            return Err("Dual microphone inputs must have identical length".to_string());
+        }
+
+        let hop = {
+            let suppressor = self
+                .wind_suppressor
+                .as_ref()
+                .ok_or_else(|| "Wind suppressor is not enabled".to_string())?;
+            suppressor.config().hop_size
+        };
+
+        let mut events = Vec::new();
+        let mut offset = 0;
+        let mut clean_block = vec![0.0f32; hop];
+
+        while offset + hop <= mic1.len() {
+            let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+            let telemetry = {
+                let suppressor = self.wind_suppressor.as_mut().unwrap();
+                suppressor.process_block(
+                    &mic1[offset..offset + hop],
+                    &mic2[offset..offset + hop],
+                    &mut clean_block,
+                    timestamp_sec,
+                )
+            };
+            self.latest_wind_telemetry = Some(telemetry);
+
+            let block_events = self.ingest_samples(&clean_block);
+            events.extend(block_events);
+            offset += hop;
+        }
+
+        Ok(events)
     }
 
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
@@ -919,10 +1002,14 @@ impl SononEngine {
         if let Some(ref mut stealth) = self.psychoacoustic {
             stealth.reset();
         }
+        if let Some(ref mut wind) = self.wind_suppressor {
+            wind.reset();
+        }
         self.latest_cwt_report = None;
         self.latest_ormia_telemetry = None;
         self.latest_stealth_report = None;
         self.latest_pulp_telemetry = None;
+        self.latest_wind_telemetry = None;
         self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.last_sample = 0.0;
