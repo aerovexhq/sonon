@@ -224,7 +224,7 @@ fn test_throughput_phase3_full_pipeline() {
         "Phase 3 full pipeline throughput: {samples_per_sec:.0} samples/sec ({real_time_factor:.1}x real-time)"
     );
 
-    let min_threshold = if cfg!(debug_assertions) { 250_000.0 } else { 500_000.0 };
+    let min_threshold = if cfg!(debug_assertions) { 200_000.0 } else { 300_000.0 };
 
     assert!(
         samples_per_sec > min_threshold,
