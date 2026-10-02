@@ -6,6 +6,7 @@ use crate::dtw::DtwMatcher;
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
 use crate::notch::RotorHarmonicNotchBank;
+use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
 use crate::phonetic::{G2pEngine, KlattSynthesizer};
 use crate::ring_buffer::AudioRingBuffer;
@@ -62,6 +63,8 @@ pub struct SononEngine {
     doppler: Option<DopplerCompensator>,
     tse: Option<TargetSoundExtractor>,
     latest_tse_report: Option<TseReport>,
+    ormia: Option<OrmiaDirectionEstimator>,
+    latest_ormia_telemetry: Option<OrmiaTelemetry>,
     num_mel_filters: usize,
 }
 
@@ -115,6 +118,8 @@ impl SononEngine {
             doppler: None,
             tse: None,
             latest_tse_report: None,
+            ormia: None,
+            latest_ormia_telemetry: None,
             num_mel_filters,
         }
     }
@@ -375,6 +380,66 @@ impl SononEngine {
             offset += hop;
         }
 
+        Ok(events)
+    }
+
+    /// Enable bio-inspired Ormia ochracea micro-tympanum differential microphone emulation.
+    pub fn enable_ormia_bridge(&mut self, config: OrmiaConfig) {
+        self.ormia = Some(OrmiaDirectionEstimator::new(config));
+    }
+
+    /// Disable Ormia micro-tympanum bridge.
+    pub fn disable_ormia_bridge(&mut self) {
+        self.ormia = None;
+        self.latest_ormia_telemetry = None;
+    }
+
+    /// Access reference to active Ormia direction estimator if enabled.
+    pub fn ormia(&self) -> Option<&OrmiaDirectionEstimator> {
+        self.ormia.as_ref()
+    }
+
+    /// Access mutable reference to active Ormia direction estimator if enabled.
+    pub fn ormia_mut(&mut self) -> Option<&mut OrmiaDirectionEstimator> {
+        self.ormia.as_mut()
+    }
+
+    /// Return latest evaluated Ormia micro-tympanum direction and spatial amplification telemetry.
+    pub fn latest_ormia_telemetry(&self) -> Option<&OrmiaTelemetry> {
+        self.latest_ormia_telemetry.as_ref()
+    }
+
+    /// Ingest dual-microphone audio streams through Ormia ochracea inter-tympanic bridge,
+    /// amplifying sub-2mm IID/ITD cues, estimating 3D line-of-sight source azimuth,
+    /// and feeding the spatially enhanced audio stream into the keyword spotter.
+    pub fn process_dual_mic_ormia(
+        &mut self,
+        mic1: &[f32],
+        mic2: &[f32],
+    ) -> Result<Vec<KeywordEvent>, String> {
+        if mic1.len() != mic2.len() {
+            return Err("Dual microphone inputs must have identical length".to_string());
+        }
+
+        let mut out1 = vec![0.0f32; mic1.len()];
+        let mut out2 = vec![0.0f32; mic1.len()];
+
+        let telemetry = {
+            let ormia = self.ormia.as_mut().ok_or_else(|| "Ormia bridge is not enabled".to_string())?;
+            ormia.process_block(mic1, mic2, &mut out1, &mut out2)
+        };
+        self.latest_ormia_telemetry = Some(telemetry.clone());
+
+        // Construct spatially enhanced mono stream:
+        // Weight towards ipsilateral channel with highest amplification
+        let mut enhanced = vec![0.0f32; mic1.len()];
+        let w1 = (0.5 * (1.0 + (telemetry.azimuth_deg / 90.0).clamp(-1.0, 1.0))).clamp(0.0, 1.0);
+        let w2 = 1.0 - w1;
+        for i in 0..mic1.len() {
+            enhanced[i] = w1 * out1[i] + w2 * out2[i];
+        }
+
+        let events = self.ingest_samples(&enhanced);
         Ok(events)
     }
 
@@ -762,7 +827,11 @@ impl SononEngine {
         if let Some(ref mut d) = self.doppler {
             d.reset();
         }
+        if let Some(ref mut ormia) = self.ormia {
+            ormia.reset();
+        }
         self.latest_cwt_report = None;
+        self.latest_ormia_telemetry = None;
         self.feature_history.clear();
         self.last_sample = 0.0;
         self.total_samples_processed = 0;

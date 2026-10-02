@@ -21,6 +21,7 @@ pub mod health;
 pub mod mel;
 pub mod neuromorphic;
 pub mod notch;
+pub mod ormia;
 pub mod pcen;
 pub mod phonetic;
 pub mod ring_buffer;
@@ -58,6 +59,9 @@ pub use neuromorphic::{
     GammatoneFilter, NeuromorphicCochlea, SpikeEvent, SpikingKwsCell, SpikingKwsConfig,
 };
 pub use notch::{BiquadNotchFilter, RotorHarmonicNotchBank};
+pub use ormia::{
+    OrmiaBiquad, OrmiaBridgeFilter, OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry,
+};
 pub use pcen::{PcenConfig, PcenFilter};
 pub use phonetic::{FormantTarget, G2pEngine, KlattSynthesizer, Phoneme, PhonemeSegment};
 pub use ring_buffer::AudioRingBuffer;
