@@ -1,4 +1,5 @@
 use crate::aec::{AcousticEchoCanceller, AecConfig};
+use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::DtwMatcher;
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -53,6 +54,8 @@ pub struct SononEngine {
     max_history_frames: usize,
     total_samples_processed: u64,
     aec: Option<AcousticEchoCanceller>,
+    doppler: Option<DopplerCompensator>,
+    num_mel_filters: usize,
 }
 
 impl SononEngine {
@@ -100,6 +103,8 @@ impl SononEngine {
             max_history_frames: 64,
             total_samples_processed: 0,
             aec: None,
+            doppler: None,
+            num_mel_filters,
         }
     }
 
@@ -195,6 +200,52 @@ impl SononEngine {
     /// Access mutable reference to active Acoustic Echo Canceller if enabled.
     pub fn aec_mut(&mut self) -> Option<&mut AcousticEchoCanceller> {
         self.aec.as_mut()
+    }
+
+    /// Enable Doppler shift compensation and kinematic velocity frequency warping.
+    pub fn enable_doppler_compensation(&mut self, config: DopplerConfig) {
+        self.doppler = Some(DopplerCompensator::new(
+            config,
+            self.num_mel_filters,
+            self.frame_size,
+            self.sample_rate,
+            80.0,
+            self.sample_rate / 2.0,
+        ));
+    }
+
+    /// Disable Doppler shift compensation.
+    pub fn disable_doppler_compensation(&mut self) {
+        self.doppler = None;
+    }
+
+    /// Access reference to active Doppler compensator if enabled.
+    pub fn doppler(&self) -> Option<&DopplerCompensator> {
+        self.doppler.as_ref()
+    }
+
+    /// Access mutable reference to active Doppler compensator if enabled.
+    pub fn doppler_mut(&mut self) -> Option<&mut DopplerCompensator> {
+        self.doppler.as_mut()
+    }
+
+    /// Update drone 3D flight velocity vector (vx, vy, vz in m/s) from autopilot/MAVLink telemetry.
+    pub fn update_kinematic_velocity(&mut self, vx: f32, vy: f32, vz: f32) {
+        if let Some(ref mut d) = self.doppler {
+            d.update_velocity_3d(vx, vy, vz);
+        }
+    }
+
+    /// Update target operator line-of-sight bearing from azimuth and elevation angles in radians.
+    pub fn update_target_bearing(&mut self, azimuth_rad: f32, elevation_rad: f32) {
+        if let Some(ref mut d) = self.doppler {
+            d.update_target_bearing(azimuth_rad, elevation_rad);
+        }
+    }
+
+    /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
+    pub fn doppler_scale_factor(&self) -> f32 {
+        self.doppler.as_ref().map_or(1.0, |d| d.doppler_factor())
     }
 
     /// Return reference to internal Voice Activity Detector.
@@ -355,35 +406,49 @@ impl SononEngine {
     fn ingest_samples_internal(&mut self, samples: &[f32]) -> Vec<KeywordEvent> {
         let mut events = Vec::new();
 
-        // Apply rotor notch filtering to incoming samples if enabled
-        let mut filtered_samples;
-        let input_slice = if let Some(ref mut bank) = self.notch_bank {
-            filtered_samples = samples.to_vec();
-            bank.process_block(&mut filtered_samples);
-            &filtered_samples[..]
+        // Apply Doppler compensation if enabled and moving
+        let doppler_resampled;
+        let effective_input = if let Some(ref d) = self.doppler {
+            let factor = d.doppler_factor();
+            if (factor - 1.0).abs() >= 0.005 {
+                doppler_resampled = DopplerCompensator::resample_audio(samples, factor);
+                &doppler_resampled[..]
+            } else {
+                samples
+            }
         } else {
             samples
         };
 
-        let mut frame_buf = vec![0.0f32; self.frame_size];
+        // Apply rotor notch filtering to incoming samples if enabled
+        let mut filtered_samples;
+        let input_slice = if let Some(ref mut bank) = self.notch_bank {
+            filtered_samples = effective_input.to_vec();
+            bank.process_block(&mut filtered_samples);
+            &filtered_samples[..]
+        } else {
+            effective_input
+        };
 
-        for chunk in input_slice.chunks(self.hop_size) {
+        let mut preemp = vec![0.0f32; self.frame_size];
+        let chunk_size = (self.ring_buffer.capacity() - self.frame_size).max(self.hop_size);
+
+        for chunk in input_slice.chunks(chunk_size) {
             self.ring_buffer.push_slice(chunk);
             self.total_samples_processed += chunk.len() as u64;
 
             while self.ring_buffer.len() >= self.frame_size {
-                if !self.ring_buffer.peek(self.frame_size, &mut frame_buf) {
+                if !self.ring_buffer.peek(self.frame_size, &mut preemp) {
                     break;
                 }
 
                 // Run acoustic health monitoring if enabled (using un-emphasized physical frame)
                 if let Some(ref mut monitor) = self.health_monitor {
                     let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
-                    self.latest_health_snapshot = Some(monitor.analyze_frame(&frame_buf, timestamp_sec));
+                    self.latest_health_snapshot = Some(monitor.analyze_frame(&preemp, timestamp_sec));
                 }
 
                 // Apply pre-emphasis filter to boost high-frequency formants and consonants
-                let mut preemp = frame_buf.clone();
                 if self.pre_emphasis_alpha > 0.0 {
                     let mut prev = self.last_sample;
                     for sample in &mut preemp {
@@ -408,16 +473,22 @@ impl SononEngine {
                     ss.process_spectrum(&mut power, is_speech);
                 }
 
+                let active_mel = if let Some(ref d) = self.doppler {
+                    d.cached_filterbank()
+                } else {
+                    &self.mel
+                };
+
                 // Compute normalized filterbank energies and MFCCs
                 let mfcc = match self.feature_mode {
                     FeatureMode::LogMel => {
-                        let log_energies = self.mel.compute_log_energies(&power);
-                        self.mel.compute_mfcc(&log_energies, self.num_mfcc)
+                        let log_energies = active_mel.compute_log_energies(&power);
+                        active_mel.compute_mfcc(&log_energies, self.num_mfcc)
                     }
                     FeatureMode::Pcen => {
-                        let raw_energies = self.mel.compute_energies(&power);
+                        let raw_energies = active_mel.compute_energies(&power);
                         let pcen_energies = self.pcen.process_frame(&raw_energies);
-                        self.mel.compute_mfcc(&pcen_energies, self.num_mfcc)
+                        active_mel.compute_mfcc(&pcen_energies, self.num_mfcc)
                     }
                 };
 
@@ -454,15 +525,29 @@ impl SononEngine {
             return features;
         }
 
+        // Apply Doppler compensation if enabled and moving
+        let doppler_resampled;
+        let effective_samples = if let Some(ref d) = self.doppler {
+            let factor = d.doppler_factor();
+            if (factor - 1.0).abs() >= 0.005 {
+                doppler_resampled = DopplerCompensator::resample_audio(samples, factor);
+                &doppler_resampled[..]
+            } else {
+                samples
+            }
+        } else {
+            samples
+        };
+
         // Apply notch filtering if active
         let mut filtered_samples;
-        let effective_samples = if let Some(ref bank) = self.notch_bank {
+        let final_samples = if let Some(ref bank) = self.notch_bank {
             let mut b_clone = bank.clone();
-            filtered_samples = samples.to_vec();
+            filtered_samples = effective_samples.to_vec();
             b_clone.process_block(&mut filtered_samples);
             &filtered_samples[..]
         } else {
-            samples
+            effective_samples
         };
 
         let mut pos = 0;
@@ -472,8 +557,8 @@ impl SononEngine {
 
         let mut ss_clone = self.spectral_subtraction.clone();
 
-        while pos + self.frame_size <= effective_samples.len() {
-            frame.copy_from_slice(&effective_samples[pos..pos + self.frame_size]);
+        while pos + self.frame_size <= final_samples.len() {
+            frame.copy_from_slice(&final_samples[pos..pos + self.frame_size]);
 
             // Apply pre-emphasis
             if self.pre_emphasis_alpha > 0.0 {
@@ -492,15 +577,21 @@ impl SononEngine {
                 ss.process_spectrum(&mut power, true);
             }
 
+            let active_mel = if let Some(ref d) = self.doppler {
+                d.cached_filterbank()
+            } else {
+                &self.mel
+            };
+
             let mfcc = match self.feature_mode {
                 FeatureMode::LogMel => {
-                    let log_energies = self.mel.compute_log_energies(&power);
-                    self.mel.compute_mfcc(&log_energies, self.num_mfcc)
+                    let log_energies = active_mel.compute_log_energies(&power);
+                    active_mel.compute_mfcc(&log_energies, self.num_mfcc)
                 }
                 FeatureMode::Pcen => {
-                    let raw_energies = self.mel.compute_energies(&power);
+                    let raw_energies = active_mel.compute_energies(&power);
                     let pcen_energies = pcen_clone.process_frame(&raw_energies);
-                    self.mel.compute_mfcc(&pcen_energies, self.num_mfcc)
+                    active_mel.compute_mfcc(&pcen_energies, self.num_mfcc)
                 }
             };
 
@@ -521,6 +612,9 @@ impl SononEngine {
         }
         if let Some(ref mut ss) = self.spectral_subtraction {
             ss.reset();
+        }
+        if let Some(ref mut d) = self.doppler {
+            d.reset();
         }
         self.feature_history.clear();
         self.last_sample = 0.0;
