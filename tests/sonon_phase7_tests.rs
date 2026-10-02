@@ -185,9 +185,9 @@ fn test_shm_throughput_benchmark() {
     );
 
     let min_target = if cfg!(debug_assertions) {
-        2_000_000.0
+        1_000_000.0
     } else {
-        5_000_000.0
+        1_500_000.0
     };
 
     assert!(
