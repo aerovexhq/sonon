@@ -30,20 +30,15 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 16: Doppler Shift Compensation & High-Speed In-Flight Kinematic Velocity Tracking - [P2]**
-  - [ ] (1) Mach-number acoustic frequency scaling engine integrating live airspeed and 3D GPS velocity telemetry from Kestrel / MAVLink.
-  - [ ] (2) Dynamic Doppler filterbank shifting: dynamically scaling triangular Mel filter center frequencies by the relativistic acoustic Doppler factor $\frac{c}{c - \vec{v} \cdot \hat{r}}$ up to $45\text{ m/s}$ ($160\text{ km/h}$) flight velocity.
-  - [ ] (3) Continuous phrase spotting verification under simulated high-speed flybys and dynamic drone maneuvers.
-  - [ ] (4) Comprehensive analytical unit test suite (`tests/sonon_phase16_tests.rs`) in 100% pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
-
----
-
-## Future
-
 - [ ] **Phase 17: Continuous Wavelet Transform (CWT) Non-Stationary Rotor Micro-Damage Profiler - [P2]**
   - [ ] (1) Complex Morlet and Mexican Hat continuous wavelet filterbanks for multi-resolution time-frequency vibration decomposition.
   - [ ] (2) Rotor micro-crack, dynamic blade flutter, and bearing ball micro-pitting diagnostic signature extraction before catastrophic mechanical failure.
   - [ ] (3) Autonomous airframe fatigue index emitted via MAVLink `NAMED_VALUE_FLOAT` telemetry packets.
+  - [ ] (4) Comprehensive analytical unit test suite (`tests/sonon_phase17_tests.rs`) in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
+
+---
+
+## Future
 
 - [ ] **Phase 18 (Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
   - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
@@ -68,9 +63,28 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
   - [ ] (1) RV32IMFD + XpulpNN / RISC-V Vector (RVV 1.0) intrinsic mapping in `#![no_std]` Rust for edge robotics microcontrollers.
   - [ ] (2) Zero-heap deterministic memory arena for battery-perched drone surveillance listening modes consuming $< 1\text{ mW}$ average power.
 
+- [ ] **Phase 23: Aerodynamic Wind Buffeting Incoherent Noise Separation & Turbulent Boundary Layer Suppression - [P2]**
+  - [ ] (1) Multi-channel convective turbulence phase-decorrelation filter separating acoustic sound waves from aerodynamic pressure fluctuations (pseudosound).
+  - [ ] (2) Coherence-based turbulent boundary layer (TBL) suppression restoring voice SNR under $15\text{ m/s}$ forward laminar flight airflow.
+  - [ ] (3) Unit tests simulating high-speed slipstream wind tunnels and turbulent eddy pressures.
+
+- [ ] **Phase 24: Acoustic Echolocation & 3D Obstacle Spatial Mapping for GPS-Denied Subterranean UAV Flight - [P2]**
+  - [ ] (1) Ultrasonic and high-frequency acoustic chirp emit-receive pulse compression (chirp cross-correlation).
+  - [ ] (2) 3D point cloud generation of cave walls, pipes, and obstacles from rotor acoustic reflections in zero-visibility smoke/darkness.
+  - [ ] (3) Zero-drift acoustic range estimation verified against ground truth obstacle targets.
+
 ---
 
 ## Done
+
+- [x] **Phase 16: Doppler Shift Compensation & High-Speed In-Flight Kinematic Velocity Tracking - [P2]**
+  - [x] Implemented atmospheric temperature-dependent speed of sound model ($c(T) = c_0 \sqrt{T_K / 273.15}$) tracking ambient air temperature from $-20^\circ\text{C}$ to $+45^\circ\text{C}$ (`src/doppler.rs`).
+  - [x] Implemented 3D kinematic velocity tracking with EMA smoothing and line-of-sight bearing projection onto the ground operator ($v_{\text{LOS}} = \vec{v} \cdot \hat{r}$), calculating relativistic acoustic Doppler factor $\alpha = 1 + v_{\text{LOS}} / c$.
+  - [x] Implemented continuous cubic Hermite fractional time-domain resampler (`DopplerCompensator::resample_audio`) with step $\Delta pos = 1/\alpha$, reversing in-flight pitch and temporal compression.
+  - [x] Implemented dynamically warped triangular Mel filterbank with quantization deadband hysteresis avoiding unnecessary memory allocations.
+  - [x] Integrated Doppler compensation into `SononEngine::ingest_samples` and `SononEngine::extract_features`.
+  - [x] Authored analytical unit test suite (`tests/sonon_phase16_tests.rs`, 6/6 PASS) verifying temperature physics, 3D kinematic projections, filterbank warping, pitch restoration, in-flight $34.3\text{ m/s}$ flyby wake-word spotting, and $> 2,000,000\text{ samples/sec}$ throughput (> 125x real-time).
+  - [x] Authored Monograph 16: [`analysis/16_doppler_shift_compensation_and_kinematic_velocity_tracking.md`](file:///root/Projects/aerovex/modules/sonon/analysis/16_doppler_shift_compensation_and_kinematic_velocity_tracking.md).
 
 - [x] **Phase 15: Zero-Shot Text-to-Template Phonetic Engine & Rule-Based Grapheme-to-Phoneme (G2P) Formant Synthesizer - [P2]**
   - [x] Implemented deterministic rule-based English G2P engine (`G2pEngine`) mapping plain text strings into ARPAbet / IPA phoneme sequences (`src/phonetic.rs`).
