@@ -6,16 +6,41 @@ use std::f32::consts::PI;
 #[derive(Debug, Clone)]
 pub struct FftProcessor {
     size: usize,
+    bit_rev: Vec<usize>,
+    twiddles: Vec<(f32, f32)>,
 }
 
 impl FftProcessor {
-    /// Create a new FFT processor for power-of-2 size.
+    /// Create a new FFT processor for power-of-2 size with precomputed twiddle factors and bit-reversals.
     pub fn new(size: usize) -> Self {
         assert!(
             size > 0 && (size & (size - 1)) == 0,
             "FFT size must be a power of two"
         );
-        Self { size }
+
+        let bits = size.trailing_zeros();
+        let mut bit_rev = Vec::with_capacity(size);
+        for i in 0..size {
+            let mut rev = 0;
+            let mut temp = i;
+            for _ in 0..bits {
+                rev = (rev << 1) | (temp & 1);
+                temp >>= 1;
+            }
+            bit_rev.push(rev);
+        }
+
+        let mut twiddles = Vec::with_capacity(size / 2);
+        for k in 0..(size / 2) {
+            let angle = -2.0 * PI * (k as f32) / (size as f32);
+            twiddles.push((angle.cos(), angle.sin()));
+        }
+
+        Self {
+            size,
+            bit_rev,
+            twiddles,
+        }
     }
 
     /// Compute in-place Radix-2 Cooley-Tukey complex FFT.
@@ -24,47 +49,34 @@ impl FftProcessor {
         assert_eq!(real.len(), n, "Real slice must match FFT size");
         assert_eq!(imag.len(), n, "Imaginary slice must match FFT size");
 
-        // Bit-reversal permutation
-        let mut j = 0;
-        for i in 0..(n - 1) {
+        // Precomputed bit-reversal permutation
+        for i in 0..n {
+            let j = self.bit_rev[i];
             if i < j {
                 real.swap(i, j);
                 imag.swap(i, j);
             }
-            let mut k = n >> 1;
-            while k <= j {
-                j -= k;
-                k >>= 1;
-            }
-            j += k;
         }
 
-        // Cooley-Tukey Radix-2 butterfly computation
+        // Cooley-Tukey Radix-2 butterfly computation using precomputed twiddle factors
         let mut len = 2;
         while len <= n {
-            let angle = -2.0 * PI / (len as f32);
-            let wlen_r = angle.cos();
-            let wlen_i = angle.sin();
+            let half = len / 2;
+            let step = n / len;
 
             let mut i = 0;
             while i < n {
-                let mut w_r = 1.0;
-                let mut w_i = 0.0;
-                for k in 0..(len / 2) {
+                for k in 0..half {
+                    let (w_r, w_i) = self.twiddles[k * step];
                     let u_r = real[i + k];
                     let u_i = imag[i + k];
-                    let v_r = real[i + k + len / 2] * w_r - imag[i + k + len / 2] * w_i;
-                    let v_i = real[i + k + len / 2] * w_i + imag[i + k + len / 2] * w_r;
+                    let v_r = real[i + k + half] * w_r - imag[i + k + half] * w_i;
+                    let v_i = real[i + k + half] * w_i + imag[i + k + half] * w_r;
 
                     real[i + k] = u_r + v_r;
                     imag[i + k] = u_i + v_i;
-                    real[i + k + len / 2] = u_r - v_r;
-                    imag[i + k + len / 2] = u_i - v_i;
-
-                    let next_w_r = w_r * wlen_r - w_i * wlen_i;
-                    let next_w_i = w_r * wlen_i + w_i * wlen_r;
-                    w_r = next_w_r;
-                    w_i = next_w_i;
+                    real[i + k + half] = u_r - v_r;
+                    imag[i + k + half] = u_i - v_i;
                 }
                 i += len;
             }

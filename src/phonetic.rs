@@ -973,12 +973,20 @@ impl KlattSynthesizer {
             // Voicing source excitation with aspiration breathiness
             let v_amp = voicing_traj[n];
             let asp_amp = self.breathiness;
-            let excitation = v_amp * glottal_wave + 0.02 * v_amp * unvoiced_noise + asp_amp * unvoiced_noise;
+            // Update vocal tract resonators dynamically at 0.5ms control rate (every 8 samples)
+            if n % 8 == 0 {
+                res1.set_coefficients(f1_traj[n], b1_traj[n], self.sample_rate);
+                res2.set_coefficients(f2_traj[n], b2_traj[n], self.sample_rate);
+                res3.set_coefficients(f3_traj[n], b3_traj[n], self.sample_rate);
+                if fric_traj[n] > 0.001 {
+                    res_fric.set_coefficients(fric_fc_traj[n], 1200.0, self.sample_rate);
+                }
+                if burst_amp_traj[n] > 0.001 {
+                    res_burst.set_coefficients(burst_fc_traj[n], 900.0, self.sample_rate);
+                }
+            }
 
-            // Update vocal tract resonators dynamically
-            res1.set_coefficients(f1_traj[n], b1_traj[n], self.sample_rate);
-            res2.set_coefficients(f2_traj[n], b2_traj[n], self.sample_rate);
-            res3.set_coefficients(f3_traj[n], b3_traj[n], self.sample_rate);
+            let excitation = v_amp * glottal_wave + 0.02 * v_amp * unvoiced_noise + asp_amp * unvoiced_noise;
 
             // Cascade vocal tract processing: R1 -> R2 -> R3 -> R4
             let r1 = res1.process(excitation);
@@ -993,7 +1001,6 @@ impl KlattSynthesizer {
             // Fricative branch
             let fric_amp = fric_traj[n];
             let fric_val = if fric_amp > 0.001 {
-                res_fric.set_coefficients(fric_fc_traj[n], 1200.0, self.sample_rate);
                 fric_amp * res_fric.process(unvoiced_noise) * 0.45
             } else {
                 0.0
@@ -1002,7 +1009,6 @@ impl KlattSynthesizer {
             // Stop burst branch
             let burst_amp = burst_amp_traj[n];
             let burst_val = if burst_amp > 0.001 {
-                res_burst.set_coefficients(burst_fc_traj[n], 900.0, self.sample_rate);
                 burst_amp * res_burst.process(unvoiced_noise) * 0.65
             } else {
                 0.0

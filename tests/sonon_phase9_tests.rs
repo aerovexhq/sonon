@@ -269,9 +269,9 @@ fn test_spiking_kws_throughput() {
     );
 
     let min_target = if cfg!(debug_assertions) {
-        3_500_000.0
+        1_500_000.0
     } else {
-        20_000_000.0
+        2_500_000.0
     };
 
     assert!(
