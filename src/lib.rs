@@ -24,6 +24,7 @@ pub mod notch;
 pub mod ormia;
 pub mod pcen;
 pub mod phonetic;
+pub mod psychoacoustic;
 pub mod ring_buffer;
 pub mod shm;
 pub mod spectral_subtraction;
@@ -64,6 +65,11 @@ pub use ormia::{
 };
 pub use pcen::{PcenConfig, PcenFilter};
 pub use phonetic::{FormantTarget, G2pEngine, KlattSynthesizer, Phoneme, PhonemeSegment};
+pub use psychoacoustic::{
+    atmospheric_absorption_db_km, bark_to_freq, freq_to_bark, threshold_in_quiet_db,
+    AcousticStealthReport, BarkBand, PsychoacousticConfig, PsychoacousticStealthEngine,
+    BARK_BANDS_25,
+};
 pub use ring_buffer::AudioRingBuffer;
 pub use shm::{ShmAudioChannel, ShmHeader, DEFAULT_SHM_PATH};
 pub use spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
