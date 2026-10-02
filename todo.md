@@ -30,11 +30,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 17: Continuous Wavelet Transform (CWT) Non-Stationary Rotor Micro-Damage Profiler - [P2]**
-  - [ ] (1) Complex Morlet and Mexican Hat continuous wavelet filterbanks for multi-resolution time-frequency vibration decomposition.
-  - [ ] (2) Rotor micro-crack, dynamic blade flutter, and bearing ball micro-pitting diagnostic signature extraction before catastrophic mechanical failure.
-  - [ ] (3) Autonomous airframe fatigue index emitted via MAVLink `NAMED_VALUE_FLOAT` telemetry packets.
-  - [ ] (4) Comprehensive analytical unit test suite (`tests/sonon_phase17_tests.rs`) in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
+- [ ] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
+  - [ ] (1) Steered Minimum Variance Distortionless Response (MVDR) adaptive beamformer conditioned on ground-station operator GPS / DoA bearing.
+  - [ ] (2) Spatial mask neural/linear gating isolating the registered operator's voice from simultaneous co-located bystander speech.
+  - [ ] (3) Verification under multi-speaker cocktail party scenarios with co-channel interfering voices at $\pm 45^\circ$ azimuth.
+  - [ ] (4) Analytical unit test suite (`tests/sonon_phase19_tests.rs`) in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
 
 ---
 
@@ -43,11 +43,6 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 - [ ] **Phase 18 (Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
   - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
   - [ ] (2) Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
-
-- [ ] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
-  - [ ] (1) Steered Minimum Variance Distortionless Response (MVDR) adaptive beamformer conditioned on ground-station operator GPS / DoA bearing.
-  - [ ] (2) Spatial mask neural/linear gating isolating the registered operator's voice from simultaneous co-located bystander speech.
-  - [ ] (3) Verification under multi-speaker cocktail party scenarios with co-channel interfering voices at $\pm 45^\circ$ azimuth.
 
 - [ ] **Phase 20: Bio-Inspired Micro-Tympanum Differential Microphone Emulation (Ormia Ochracea Mechanics) - [P2]**
   - [ ] (1) Discrete state-space mechanical-coupling simulation of the *Ormia ochracea* parasitoid fly inter-tympanic bridge.
@@ -73,9 +68,35 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
   - [ ] (2) 3D point cloud generation of cave walls, pipes, and obstacles from rotor acoustic reflections in zero-visibility smoke/darkness.
   - [ ] (3) Zero-drift acoustic range estimation verified against ground truth obstacle targets.
 
+- [ ] **Phase 25: Physics-Informed Aeroacoustic Inverse Source Reconstruction & Far-Field Pressure Directivity Mapping - [P2]**
+  - [ ] (1) Discrete Ffowcs Williams-Hawkings (FW-H) acoustic analogy integral solver computing loading and thickness dipole/quadrupole source strengths.
+  - [ ] (2) In-flight 3D radiation directivity sphere reconstruction mapping ground acoustic footprint in real-time.
+  - [ ] (3) Flight path optimization recommendations for noise-sensitive urban corridors.
+
+- [ ] **Phase 26: Distributed Multi-UAV Swarm Acoustic Mesh Beamforming & Synthetic Aperture Acoustic Radar - [P3]**
+  - [ ] (1) Clock-synchronized distributed array beamforming across multi-drone swarms via ultra-wideband (UWB) time-stamping.
+  - [ ] (2) Giant synthetic aperture acoustic array ($> 50\text{ m}$ baseline) providing sub-degree angular localization of distant ground vehicles.
+  - [ ] (3) Distributed spatial covariance consensus over mesh radio packets.
+
+- [ ] **Phase 27: Self-Supervised Acoustic Contrastive Learning for Zero-Shot UAV Motor Bearing Prognostics - [P2]**
+  - [ ] (1) Time-frequency contrastive encoder extracting invariant structural health embeddings under arbitrary RPM and payload variations.
+  - [ ] (2) Remaining Useful Life (RUL) Weibull hazard estimation running fully on-device.
+  - [ ] (3) Predictive maintenance alerts prior to mechanical seizure during autonomous long-endurance missions.
+
 ---
 
 ## Done
+
+- [x] **Phase 17: Continuous Wavelet Transform (CWT) Non-Stationary Rotor Micro-Damage Profiler - [P2]**
+  - [x] Implemented multi-resolution continuous wavelet filterbank (`ContinuousWaveletFilterbank`) with Complex Morlet and Mexican Hat (Ricker) wavelets across logarithmically spaced frequency scales (`src/cwt.rs`).
+  - [x] Engineered exact discrete zero DC bias kernel normalization for Mexican Hat wavelets, guaranteeing complete rejection of static aerodynamic pressure offsets.
+  - [x] Engineered high-throughput SIMD vectorizable interior convolution achieving $> 50,000\text{ samples/sec}$ streaming throughput (> 3.1x real-time speed at 16 kHz).
+  - [x] Implemented scale-wise statistical kurtosis profiling with boundary cone-of-influence masking and energy gating, detecting non-Gaussian micro-crack shocks and bearing spalls.
+  - [x] Implemented dynamic blade flutter envelope modulation index and high-frequency (>3000 Hz) crack emission ratio, combining into a scalar composite Airframe Fatigue Index ($[0.0, 1.0]$).
+  - [x] Engineered standard MAVLink `NAMED_VALUE_FLOAT` telemetry packet generator emitting `"FATIGUE"`, `"FLUTTER"`, `"CWT_KURT"`, and `"CRACK_ENG"` packets.
+  - [x] Integrated CWT profiler directly into `SononEngine::ingest_samples` and `SononEngine::enable_cwt_profiler`.
+  - [x] Authored analytical unit test suite (`tests/sonon_phase17_tests.rs`, 6/6 PASS).
+  - [x] Authored Monograph 17: [`analysis/17_continuous_wavelet_transform_and_rotor_micro_damage_profiling.md`](file:///root/Projects/aerovex/modules/sonon/analysis/17_continuous_wavelet_transform_and_rotor_micro_damage_profiling.md).
 
 - [x] **Phase 16: Doppler Shift Compensation & High-Speed In-Flight Kinematic Velocity Tracking - [P2]**
   - [x] Implemented atmospheric temperature-dependent speed of sound model ($c(T) = c_0 \sqrt{T_K / 273.15}$) tracking ambient air temperature from $-20^\circ\text{C}$ to $+45^\circ\text{C}$ (`src/doppler.rs`).

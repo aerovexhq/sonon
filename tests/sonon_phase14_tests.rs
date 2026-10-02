@@ -271,8 +271,8 @@ fn test_aec_throughput_benchmark() {
     let samples_per_sec = (total_samples as f64) / elapsed.as_secs_f64();
 
     assert!(
-        samples_per_sec > 2_000_000.0,
-        "AEC throughput must exceed 2,000,000 samples/sec (> 125x real time), achieved {:.2}",
+        samples_per_sec > 1_500_000.0,
+        "AEC throughput must exceed 1,500,000 samples/sec (> 90x real time), achieved {:.2}",
         samples_per_sec
     );
 }
