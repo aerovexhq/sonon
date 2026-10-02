@@ -9,6 +9,7 @@ use crate::notch::RotorHarmonicNotchBank;
 use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
 use crate::phonetic::{G2pEngine, KlattSynthesizer};
+use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
 use crate::ring_buffer::AudioRingBuffer;
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
@@ -65,6 +66,9 @@ pub struct SononEngine {
     latest_tse_report: Option<TseReport>,
     ormia: Option<OrmiaDirectionEstimator>,
     latest_ormia_telemetry: Option<OrmiaTelemetry>,
+    psychoacoustic: Option<PsychoacousticStealthEngine>,
+    latest_stealth_report: Option<AcousticStealthReport>,
+    current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
 }
 
@@ -120,6 +124,9 @@ impl SononEngine {
             latest_tse_report: None,
             ormia: None,
             latest_ormia_telemetry: None,
+            psychoacoustic: None,
+            latest_stealth_report: None,
+            current_motor_rpms: Vec::new(),
             num_mel_filters,
         }
     }
@@ -187,6 +194,7 @@ impl SononEngine {
 
     /// Update rotor RPM from autopilot or ESC telemetry.
     pub fn update_motor_rpm(&mut self, rpm: f32) {
+        self.current_motor_rpms = vec![rpm];
         if let Some(ref mut bank) = self.notch_bank {
             bank.update_rpm(rpm);
         }
@@ -200,6 +208,7 @@ impl SononEngine {
 
     /// Update multi-motor RPM telemetry (e.g., 4 motors on a quadcopter).
     pub fn update_multi_motor_rpm(&mut self, motor_rpms: &[f32]) {
+        self.current_motor_rpms = motor_rpms.to_vec();
         if let Some(ref mut bank) = self.notch_bank {
             bank.update_multi_motor_rpm(motor_rpms);
         }
@@ -443,6 +452,32 @@ impl SononEngine {
         Ok(events)
     }
 
+    /// Enable ISO/IEC 11172-3 psychoacoustic masking model and active drone acoustic stealth engine.
+    pub fn enable_psychoacoustic_stealth(&mut self, config: PsychoacousticConfig) {
+        self.psychoacoustic = Some(PsychoacousticStealthEngine::new(config));
+    }
+
+    /// Disable psychoacoustic masking and stealth engine.
+    pub fn disable_psychoacoustic_stealth(&mut self) {
+        self.psychoacoustic = None;
+        self.latest_stealth_report = None;
+    }
+
+    /// Access reference to active psychoacoustic stealth engine if enabled.
+    pub fn psychoacoustic(&self) -> Option<&PsychoacousticStealthEngine> {
+        self.psychoacoustic.as_ref()
+    }
+
+    /// Access mutable reference to active psychoacoustic stealth engine if enabled.
+    pub fn psychoacoustic_mut(&mut self) -> Option<&mut PsychoacousticStealthEngine> {
+        self.psychoacoustic.as_mut()
+    }
+
+    /// Return latest evaluated acoustic stealth and human detectability diagnostic report.
+    pub fn latest_stealth_report(&self) -> Option<&AcousticStealthReport> {
+        self.latest_stealth_report.as_ref()
+    }
+
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
     pub fn doppler_scale_factor(&self) -> f32 {
         self.doppler.as_ref().map_or(1.0, |d| d.doppler_factor())
@@ -679,6 +714,16 @@ impl SononEngine {
                 // Compute power spectrum
                 let mut power = self.fft.power_spectrum(&preemp);
 
+                // Run psychoacoustic stealth and detectability analysis if enabled
+                if let Some(ref mut stealth) = self.psychoacoustic {
+                    let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+                    self.latest_stealth_report = Some(stealth.analyze_spectrum(
+                        &power,
+                        &self.current_motor_rpms,
+                        timestamp_sec,
+                    ));
+                }
+
                 // Apply spectral subtraction noise suppression if enabled
                 if let Some(ref mut ss) = self.spectral_subtraction {
                     ss.process_spectrum(&mut power, is_speech);
@@ -830,8 +875,13 @@ impl SononEngine {
         if let Some(ref mut ormia) = self.ormia {
             ormia.reset();
         }
+        if let Some(ref mut stealth) = self.psychoacoustic {
+            stealth.reset();
+        }
         self.latest_cwt_report = None;
         self.latest_ormia_telemetry = None;
+        self.latest_stealth_report = None;
+        self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.last_sample = 0.0;
         self.total_samples_processed = 0;
