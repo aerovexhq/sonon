@@ -10,6 +10,7 @@ use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
 use crate::phonetic::{G2pEngine, KlattSynthesizer};
 use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
+use crate::riscv_pulp::{PulpConfig, PulpPowerModel, PulpTelemetry};
 use crate::ring_buffer::AudioRingBuffer;
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
@@ -68,6 +69,8 @@ pub struct SononEngine {
     latest_ormia_telemetry: Option<OrmiaTelemetry>,
     psychoacoustic: Option<PsychoacousticStealthEngine>,
     latest_stealth_report: Option<AcousticStealthReport>,
+    pulp_model: Option<PulpPowerModel>,
+    latest_pulp_telemetry: Option<PulpTelemetry>,
     current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
 }
@@ -126,6 +129,8 @@ impl SononEngine {
             latest_ormia_telemetry: None,
             psychoacoustic: None,
             latest_stealth_report: None,
+            pulp_model: None,
+            latest_pulp_telemetry: None,
             current_motor_rpms: Vec::new(),
             num_mel_filters,
         }
@@ -478,6 +483,27 @@ impl SononEngine {
         self.latest_stealth_report.as_ref()
     }
 
+    /// Enable ultra-low-power PULP / RISC-V edge surveillance energy model.
+    pub fn enable_pulp_acceleration(&mut self, config: PulpConfig) {
+        self.pulp_model = Some(PulpPowerModel::new(config));
+    }
+
+    /// Disable PULP / RISC-V acceleration energy model.
+    pub fn disable_pulp_acceleration(&mut self) {
+        self.pulp_model = None;
+        self.latest_pulp_telemetry = None;
+    }
+
+    /// Access reference to active PULP power model if enabled.
+    pub fn pulp_model(&self) -> Option<&PulpPowerModel> {
+        self.pulp_model.as_ref()
+    }
+
+    /// Access latest evaluated PULP surveillance telemetry.
+    pub fn latest_pulp_telemetry(&self) -> Option<&PulpTelemetry> {
+        self.latest_pulp_telemetry.as_ref()
+    }
+
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
     pub fn doppler_scale_factor(&self) -> f32 {
         self.doppler.as_ref().map_or(1.0, |d| d.doppler_factor())
@@ -766,6 +792,21 @@ impl SononEngine {
                     self.feature_history.clear(); // Reset history after match to avoid duplicate triggers
                 }
 
+                // Run PULP surveillance energy modeling if enabled
+                if let Some(ref model) = self.pulp_model {
+                    let mut active_cycles = 15_000u32;
+                    if is_speech {
+                        active_cycles += 12_000;
+                    }
+                    if self.psychoacoustic.is_some() {
+                        active_cycles += 4_000;
+                    }
+                    if self.notch_bank.is_some() {
+                        active_cycles += 2_000;
+                    }
+                    self.latest_pulp_telemetry = Some(model.evaluate_frame_power(active_cycles, 0.45));
+                }
+
                 // Advance by hop size
                 self.ring_buffer.pop_front(self.hop_size);
             }
@@ -881,6 +922,7 @@ impl SononEngine {
         self.latest_cwt_report = None;
         self.latest_ormia_telemetry = None;
         self.latest_stealth_report = None;
+        self.latest_pulp_telemetry = None;
         self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.last_sample = 0.0;

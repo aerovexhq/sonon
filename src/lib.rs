@@ -25,6 +25,7 @@ pub mod ormia;
 pub mod pcen;
 pub mod phonetic;
 pub mod psychoacoustic;
+pub mod riscv_pulp;
 pub mod ring_buffer;
 pub mod shm;
 pub mod spectral_subtraction;
@@ -69,6 +70,10 @@ pub use psychoacoustic::{
     atmospheric_absorption_db_km, bark_to_freq, freq_to_bark, threshold_in_quiet_db,
     AcousticStealthReport, BarkBand, PsychoacousticConfig, PsychoacousticStealthEngine,
     BARK_BANDS_25,
+};
+pub use riscv_pulp::{
+    PackedI16x2, PackedI8x4, PulpConfig, PulpMemoryArena, PulpPowerModel, PulpTelemetry,
+    PulpVectorEngine, RvvConfig, RvvVectorEngine,
 };
 pub use ring_buffer::AudioRingBuffer;
 pub use shm::{ShmAudioChannel, ShmHeader, DEFAULT_SHM_PATH};
