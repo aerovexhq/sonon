@@ -90,28 +90,31 @@ impl DtwMatcher {
             return f32::INFINITY;
         }
 
-        let mut cost = vec![vec![f32::INFINITY; m + 1]; n + 1];
-        cost[0][0] = 0.0;
+        let mut prev = vec![f32::INFINITY; m + 1];
+        let mut curr = vec![f32::INFINITY; m + 1];
+        prev[0] = 0.0;
 
         for i in 1..=n {
+            curr.fill(f32::INFINITY);
             let j_start = 1.max(i.saturating_sub(band_radius));
             let j_end = m.min(i + band_radius);
 
             for j in j_start..=j_end {
                 let dist = euclidean_distance(&seq1[i - 1], &seq2[j - 1]);
-                let min_prev = cost[i - 1][j].min(cost[i][j - 1]).min(cost[i - 1][j - 1]);
+                let min_prev = prev[j].min(curr[j - 1]).min(prev[j - 1]);
                 if min_prev.is_finite() {
-                    cost[i][j] = dist + min_prev;
+                    curr[j] = dist + min_prev;
                 }
             }
+            std::mem::swap(&mut prev, &mut curr);
         }
 
-        if !cost[n][m].is_finite() {
+        if !prev[m].is_finite() {
             return f32::INFINITY;
         }
 
         // Path-length normalized distance
-        cost[n][m] / ((n + m) as f32)
+        prev[m] / ((n + m) as f32)
     }
 
     /// Match an observation window against enrolled phrase templates using each template's band radius.

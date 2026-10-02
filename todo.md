@@ -122,14 +122,21 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Done
 
-- [x] **Phase 20: WebAssembly (WASM) Real-Time Browser AudioWorklet & Interactive Web Engine - [P1]**
-  - [x] Engineered 100% pure safe Rust WebAssembly FFI (`src/wasm.rs`, `#![deny(unsafe_code)]`) with handle management registry and synchronized shared static buffers (`WASM_INPUT_BUFFER`, `WASM_STRING_BUFFER`).
-  - [x] Compiled release WebAssembly binary `sonon.wasm` (798 KB uncompressed, ~185 KB compressed) executing STFT, Mel filterbank, PCEN, Sakoe-Chiba DTW, Klatt synthesis, and CWT telemetry directly inside client browsers.
-  - [x] Engineered Web Audio API & AudioWorklet / ScriptProcessor live microphone ingestion at 16,000 Hz with real-time VAD, rotor notch filtering, and DTW keyword spotting.
-  - [x] Implemented in-browser zero-shot Klatt formant speech synthesis with interactive audio audition playback via Web Audio `AudioBufferSourceNode`.
-  - [x] Upgraded interactive web visualizer deployed on `sonon.aerovex.net` via GitHub Pages featuring live oscilloscope, real-time telemetry HUD, keyword trigger banners, and CWT airframe health diagnostics.
-  - [x] Authored analytical unit test suite (`tests/sonon_phase20_tests.rs`, 5/5 PASS) verifying lifecycle, buffer I/O, zero-shot enrollment, live streaming detection, and CWT diagnostics.
+- [x] **Phase 20: WebAssembly (WASM) Real-Time Browser AudioWorklet, Interactive Word Registration Playground & High-Fidelity Synthesizer Overhaul - [P1]**
+  - [x] Engineered 100% pure safe Rust WebAssembly FFI (`src/wasm.rs`, `#![deny(unsafe_code)]`) with handle management registry, dynamic function resolution, and synchronized shared static buffers (`WASM_INPUT_BUFFER`, `WASM_STRING_BUFFER`).
+  - [x] Implemented direct WASM audio template enrollment (`sonon_wasm_enroll_audio_buffer`), template management (`sonon_wasm_clear_templates`, `sonon_wasm_get_template_count`), and live buffer streaming.
+  - [x] Overhauled formant speech synthesizer in `src/phonetic.rs`: Liljencrants-Fant (LF) glottal excitation pulse model with vocal micro-jitter, 4-pole series cascade vocal tract resonators ($R_1 \to R_2 \to R_3 \to R_4$), continuous S-curve coarticulation across phoneme boundaries, lip radiation high-pass differentiator, diphthong glide trajectories, and high-frequency frication/stop-burst generators sustaining $> 2,500,000\text{ samples/sec}$ in release mode.
+  - [x] Built interactive tabbed Web Playground on `sonon.aerovex.net` (`public/index.html`):
+    - Cockpit: Live dual-channel oscilloscope, continuous VAD indicator, real-time keyword spotting event stream.
+    - Custom Word Registration: In-browser voice recording with 3-second countdown, automatic silence trimming, waveform display, audition playback, and direct WASM audio template enrollment; alongside text-based phonetic synthesis enrollment.
+    - Word Matrix: Dynamic word badge cards with individual confidence thresholds, simulation test triggers, and template removal.
+    - Speech Synthesis Lab: Interactive sliders for fundamental frequency ($F_0$), speech rate, and vocal tract length scale factor with live waveform preview.
+    - Rotor Acoustics & Diagnostics: Real-time motor RPM slider, BPF harmonic notch filter monitoring, and CWT scalogram telemetry.
+  - [x] Optimized core DSP kernels (`src/stft.rs`, `src/dtw.rs`): Precomputed bit-reversal and twiddle factor tables in `FftProcessor`, and alternating 2-row flat DTW banded cost evaluation eliminating heap thrashing.
+  - [x] Compiled optimized release WebAssembly binary `public/sonon.wasm` (812 KB uncompressed, ~188 KB gzip) and verified all 23 exported symbols in Node.js.
+  - [x] Authored analytical unit test suite (`tests/sonon_phase20_tests.rs`, 6/6 PASS) and full crate test suite (94/94 PASS across 16 test suites).
   - [x] Authored Monograph 20: [`analysis/20_webassembly_browser_audioworklet_and_edge_web_engine.md`](file:///root/Projects/aerovex/modules/sonon/analysis/20_webassembly_browser_audioworklet_and_edge_web_engine.md).
+  - [x] Authored Monograph 21 (Cross-Engine Research with Phonon): [`analysis/21_advanced_articulatory_speech_synthesis_and_voice_replication.md`](file:///root/Projects/aerovex/modules/sonon/analysis/21_advanced_articulatory_speech_synthesis_and_voice_replication.md) formulating 1D wave mechanics, Webster's horn equation, electro-acoustic MNA SPICE ladder networks, Kelly-Lochbaum scattering junctions, and precision voice replication protocols.
 
 - [x] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
   - [x] Implemented Steered Minimum Variance Distortionless Response (MVDR / Capon) adaptive beamformer with dynamic spatial covariance tracking and diagonal loading (`src/tse.rs`).

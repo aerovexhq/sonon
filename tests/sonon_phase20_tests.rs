@@ -6,13 +6,14 @@
 //! zero-shot text enrollment, continuous streaming ingestion, and CWT telemetry via safe WASM exports.
 
 use sonon::wasm::{
-    sonon_wasm_create, sonon_wasm_destroy, sonon_wasm_enable_cwt_profiler,
-    sonon_wasm_enable_health_monitoring, sonon_wasm_enable_rotor_notch, sonon_wasm_enroll_text,
+    sonon_wasm_clear_templates, sonon_wasm_create, sonon_wasm_destroy,
+    sonon_wasm_enable_cwt_profiler, sonon_wasm_enable_health_monitoring,
+    sonon_wasm_enable_rotor_notch, sonon_wasm_enroll_audio_buffer, sonon_wasm_enroll_text,
     sonon_wasm_get_cwt_fatigue_index, sonon_wasm_get_cwt_kurtosis, sonon_wasm_get_health_score,
     sonon_wasm_get_input_buffer_capacity, sonon_wasm_get_input_sample,
     sonon_wasm_get_last_keyword_byte, sonon_wasm_get_last_keyword_confidence,
-    sonon_wasm_get_last_keyword_len, sonon_wasm_get_vad_active, sonon_wasm_ingest,
-    sonon_wasm_reset, sonon_wasm_set_input_sample, sonon_wasm_set_string_byte,
+    sonon_wasm_get_last_keyword_len, sonon_wasm_get_template_count, sonon_wasm_get_vad_active,
+    sonon_wasm_ingest, sonon_wasm_reset, sonon_wasm_set_input_sample, sonon_wasm_set_string_byte,
     sonon_wasm_synthesize_text, sonon_wasm_update_rpm,
 };
 use std::sync::Mutex;
@@ -197,6 +198,35 @@ fn test_wasm_telemetry_and_diagnostics() {
     }
     sonon_wasm_ingest(handle, 1024);
     assert_eq!(sonon_wasm_get_vad_active(handle), 0);
+
+    sonon_wasm_destroy(handle);
+}
+
+#[test]
+fn test_wasm_audio_buffer_enrollment_and_template_management() {
+    let _lock = TEST_LOCK.lock().unwrap();
+    let handle = sonon_wasm_create(16000.0, 512, 160, 13);
+    assert_ne!(handle, 0);
+
+    assert_eq!(sonon_wasm_get_template_count(handle), 0);
+
+    // Synthesize "falcon" audio directly into input buffer
+    let keyword = "falcon";
+    for (i, b) in keyword.as_bytes().iter().enumerate() {
+        sonon_wasm_set_string_byte(i, *b);
+    }
+    let synth_samples = sonon_wasm_synthesize_text(handle, keyword.len());
+    assert!(synth_samples > 0);
+
+    // Now enroll from the audio in the buffer (mimicking microphone voice recording)
+    let enrolled_frames =
+        sonon_wasm_enroll_audio_buffer(handle, keyword.len(), synth_samples, 0.58);
+    assert!(enrolled_frames > 0);
+    assert_eq!(sonon_wasm_get_template_count(handle), 1);
+
+    // Clear templates
+    assert_eq!(sonon_wasm_clear_templates(handle), 0);
+    assert_eq!(sonon_wasm_get_template_count(handle), 0);
 
     sonon_wasm_destroy(handle);
 }
