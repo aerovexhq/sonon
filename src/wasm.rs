@@ -136,6 +136,77 @@ pub extern "C" fn sonon_wasm_enroll_text(handle: u64, text_len: usize, threshold
     })
 }
 
+/// Enrolls a keyword directly from audio samples in the shared input buffer (e.g. from live microphone recording).
+///
+/// Returns the number of enrolled feature frames on success, or 0 on failure.
+pub extern "C" fn sonon_wasm_enroll_audio_buffer(
+    handle: u64,
+    name_len: usize,
+    sample_count: usize,
+    threshold: f32,
+) -> usize {
+    if name_len == 0
+        || name_len > WASM_STRING_BUFFER_SIZE
+        || sample_count == 0
+        || sample_count > WASM_AUDIO_BUFFER_SIZE
+    {
+        return 0;
+    }
+
+    let name = {
+        let buf = WASM_STRING_BUFFER
+            .lock()
+            .expect("WASM string buffer lock poisoned");
+        match std::str::from_utf8(&buf[..name_len]) {
+            Ok(s) => s.trim().replace(' ', "_"),
+            Err(_) => return 0,
+        }
+    };
+
+    let samples = {
+        let buf = WASM_INPUT_BUFFER
+            .lock()
+            .expect("WASM input buffer lock poisoned");
+        buf[..sample_count].to_vec()
+    };
+
+    with_wasm_registry(|map| {
+        if let Some(engine) = map.get_mut(&handle) {
+            let features = engine.extract_features(&samples);
+            let count = features.len();
+            if count > 0 {
+                engine.enroll_keyword(name, features, threshold);
+            }
+            count
+        } else {
+            0
+        }
+    })
+}
+
+/// Clears all enrolled keyword templates from the engine.
+pub extern "C" fn sonon_wasm_clear_templates(handle: u64) -> i32 {
+    with_wasm_registry(|map| {
+        if let Some(engine) = map.get_mut(&handle) {
+            engine.clear_keywords();
+            0
+        } else {
+            -1
+        }
+    })
+}
+
+/// Returns the number of currently enrolled keyword templates in the engine.
+pub extern "C" fn sonon_wasm_get_template_count(handle: u64) -> usize {
+    with_wasm_registry(|map| {
+        if let Some(engine) = map.get(&handle) {
+            engine.dtw().template_count()
+        } else {
+            0
+        }
+    })
+}
+
 /// Synthesizes acoustic speech for the text in the string buffer, storing the waveform in the input buffer.
 ///
 /// Returns the number of synthesized audio samples written.
