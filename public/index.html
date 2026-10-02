@@ -3,19 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sonon | Embedded Acoustic DSP & Phrase Spotting Engine</title>
-  <meta name="description" content="Ultra-low-latency, zero-cloud acoustic DSP, speech recognition, rotor noise suppression, and in-flight health monitoring for autonomous robotics.">
+  <title>Sonon | Embedded Acoustic DSP & WebAssembly Real-Time Audio Engine</title>
+  <meta name="description" content="Ultra-low-latency, zero-cloud acoustic DSP, speech recognition, rotor noise suppression, and in-flight health monitoring in pure safe Rust and WebAssembly.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #090c12;
       --card-bg: #121824;
+      --card-alt: #161f30;
       --border: #1e293b;
+      --border-bright: #334155;
       --primary: #06b6d4;
       --primary-hover: #0891b2;
       --accent: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
       --text: #f1f5f9;
       --text-muted: #94a3b8;
       --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
@@ -67,7 +71,7 @@
     nav a:hover { color: var(--primary); }
     .hero {
       max-width: 1000px;
-      margin: 4rem auto 3rem;
+      margin: 3.5rem auto 2.5rem;
       padding: 0 1.5rem;
       text-align: center;
     }
@@ -99,8 +103,8 @@
     .hero p {
       font-size: 1.2rem;
       color: var(--text-muted);
-      max-width: 720px;
-      margin: 0 auto 2.5rem;
+      max-width: 760px;
+      margin: 0 auto 2rem;
     }
     .cta-row {
       display: flex;
@@ -109,19 +113,23 @@
       flex-wrap: wrap;
     }
     .btn {
-      padding: 0.75rem 1.5rem;
+      padding: 0.7rem 1.4rem;
       border-radius: 8px;
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       text-decoration: none;
       transition: all 0.2s;
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      font-family: var(--font-sans);
     }
     .btn-primary {
       background: var(--primary);
       color: #000;
+      font-weight: 700;
     }
     .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
     .btn-secondary {
@@ -130,49 +138,239 @@
       border: 1px solid var(--border);
     }
     .btn-secondary:hover { border-color: var(--text-muted); }
-    .live-demo-card {
-      max-width: 900px;
+    .btn-accent {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .btn-accent:hover { background: rgba(16, 185, 129, 0.25); }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.25); }
+    .btn-sm {
+      padding: 0.35rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    /* Live Studio Section */
+    .studio-container {
+      max-width: 1100px;
       margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+    .studio-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+      border-radius: 14px;
+      padding: 1.75rem;
+      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
     }
-    .demo-header {
+    .studio-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1rem;
-      padding-bottom: 0.75rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
       border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 0.75rem;
     }
-    .demo-title { font-weight: 600; font-size: 1rem; color: #fff; }
-    .demo-status { font-family: var(--font-mono); font-size: 0.8rem; color: var(--primary); }
+    .studio-title {
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .wasm-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+    .wasm-status-pill {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-muted);
+    }
+    .dot-pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      display: inline-block;
+    }
+    .dot-inactive {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      display: inline-block;
+    }
+
+    /* Spotting Banner */
+    .spotting-alert {
+      display: none;
+      background: linear-gradient(90deg, rgba(6, 182, 212, 0.2), rgba(16, 185, 129, 0.25));
+      border: 1px solid var(--primary);
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 1.25rem;
+      font-family: var(--font-mono);
+      color: #fff;
+      animation: alertPulse 1.2s infinite alternate;
+    }
+    @keyframes alertPulse {
+      from { box-shadow: 0 0 10px rgba(6, 182, 212, 0.3); }
+      to { box-shadow: 0 0 25px rgba(16, 185, 129, 0.6); }
+    }
+    .spotting-alert-text {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+    .spotting-alert-sub {
+      font-size: 0.8rem;
+      color: var(--accent);
+      margin-top: 0.2rem;
+    }
+
+    /* Oscilloscope Canvas */
     canvas {
       width: 100%;
-      height: 160px;
+      height: 180px;
       background: #06090e;
       border-radius: 8px;
       border: 1px solid var(--border);
       display: block;
     }
-    .demo-controls {
+
+    /* Studio Grid */
+    .studio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-top: 1.25rem;
+    }
+    @media (max-width: 850px) {
+      .studio-grid { grid-template-columns: 1fr; }
+    }
+
+    .studio-panel {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+    .panel-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 1rem;
+      color: #cbd5e1;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 1rem;
-      flex-wrap: wrap;
-      gap: 1rem;
     }
-    .demo-stats {
-      display: flex;
-      gap: 1.5rem;
-      font-family: var(--font-mono);
+    .input-group {
+      margin-bottom: 1rem;
+    }
+    .input-label {
+      display: block;
       font-size: 0.8rem;
       color: var(--text-muted);
+      margin-bottom: 0.4rem;
+      font-family: var(--font-mono);
     }
-    .demo-stats span { color: var(--accent); font-weight: 600; }
+    .text-input {
+      width: 100%;
+      background: #090c12;
+      border: 1px solid var(--border-bright);
+      color: #fff;
+      padding: 0.6rem 0.8rem;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      outline: none;
+    }
+    .text-input:focus { border-color: var(--primary); }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .slider {
+      flex: 1;
+      accent-color: var(--primary);
+    }
+    .slider-val {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--primary);
+      min-width: 70px;
+      text-align: right;
+    }
+    .preset-chips {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+    .chip {
+      background: #090c12;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* Telemetry HUD */
+    .telemetry-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .telemetry-cell {
+      background: #090c12;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.6rem 0.8rem;
+    }
+    .telemetry-cell-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .telemetry-cell-value {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-top: 0.2rem;
+    }
+
+    /* Feature Grid */
     .grid {
       max-width: 1100px;
       margin: 4rem auto;
@@ -200,11 +398,15 @@
       justify-content: center;
       font-size: 1.25rem;
       margin-bottom: 1rem;
+      font-family: var(--font-mono);
+      font-weight: 700;
     }
     .card h3 { font-size: 1.15rem; margin-bottom: 0.5rem; }
     .card p { font-size: 0.9rem; color: var(--text-muted); }
+
+    /* Code Section */
     .code-section {
-      max-width: 900px;
+      max-width: 1000px;
       margin: 4rem auto;
       padding: 0 1.5rem;
     }
@@ -234,11 +436,11 @@
   <header>
     <a href="/" class="logo">
       <span>SONON</span>
-      <span class="logo-badge">Edge DSP</span>
+      <span class="logo-badge">WASM Studio</span>
     </a>
     <nav>
-      <a href="#features">Features</a>
-      <a href="#demo">Live Visualizer</a>
+      <a href="#studio">Live Studio</a>
+      <a href="#features">Physics &amp; DSP</a>
       <a href="#quickstart">Quickstart</a>
       <a href="https://github.com/aerovexhq/sonon" target="_blank" rel="noopener">GitHub</a>
     </nav>
@@ -246,34 +448,144 @@
 
   <main>
     <section class="hero">
-      <div class="hero-tag">Pure Safe Rust &bull; Zero Cloud &bull; Sub-10ms Latency</div>
-      <h1>Ultra-High-Throughput Acoustic DSP &amp; Wake-Word Engine</h1>
+      <div class="hero-tag">Pure Safe Rust &bull; WebAssembly Parity &bull; Zero Cloud &bull; Sub-10ms Latency</div>
+      <h1>Real-Time Acoustic DSP &amp; Speech Spotting in WebAssembly</h1>
       <p>
-        Minimalist embedded acoustic intelligence tailored for autonomous UAVs, robotics microcontrollers, and edge companion computers. Zero neural bloat, deterministic memory, and telemetry-coupled noise rejection.
+        Embedded acoustic intelligence compiled directly to WebAssembly. Execute 16,000 Hz microphone ingestion, zero-shot Klatt phonetic speech synthesis, banded Sakoe-Chiba DTW, and continuous wavelet rotor damage diagnostics directly in your web browser.
       </p>
       <div class="cta-row">
-        <a href="#quickstart" class="btn btn-primary">Get Started</a>
+        <a href="#studio" class="btn btn-primary">Open Interactive Studio</a>
         <a href="https://github.com/aerovexhq/sonon" target="_blank" rel="noopener" class="btn btn-secondary">View on GitHub</a>
       </div>
     </section>
 
-    <section id="demo" class="live-demo-card">
-      <div class="demo-header">
-        <div class="demo-title">Real-Time Acoustic Telemetry Stream</div>
-        <div class="demo-status" id="demoStatus">Engine Active &bull; 16,000 Hz</div>
-      </div>
-      <canvas id="scopeCanvas" width="860" height="160"></canvas>
-      <div class="demo-controls">
-        <div class="demo-stats">
-          <div>Throughput: <span>&gt; 2.5M smp/s</span></div>
-          <div>VAD State: <span id="vadState">Speech Active</span></div>
-          <div>Doppler Mach: <span id="dopplerMach">0.10 M</span></div>
-          <div>CWT Fatigue: <span id="fatigueIdx">0.02 (Normal)</span></div>
+    <!-- Interactive WASM Studio -->
+    <section id="studio" class="studio-container">
+      <div class="studio-card">
+        <div class="studio-header">
+          <div class="studio-title">
+            <span>Acoustic Waveform &amp; Telemetry Cockpit</span>
+            <span class="wasm-badge">WASM 32-bit</span>
+          </div>
+          <div class="wasm-status-pill">
+            <span class="dot-pulse" id="statusDot"></span>
+            <span id="wasmStatusText">Loading sonon.wasm...</span>
+          </div>
         </div>
-        <button class="btn btn-secondary" id="toggleSimBtn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Pause Visualizer</button>
+
+        <!-- Detection Banner -->
+        <div class="spotting-alert" id="detectionBanner">
+          <div class="spotting-alert-text" id="detectionKeyword">[KEYWORD DETECTED]</div>
+          <div class="spotting-alert-sub" id="detectionConfidence">Confidence: 0.00 &bull; Sakoe-Chiba DTW Match</div>
+        </div>
+
+        <!-- Live Waveform Canvas -->
+        <canvas id="scopeCanvas" width="1020" height="180"></canvas>
+
+        <!-- Real-Time Telemetry Row -->
+        <div class="telemetry-row">
+          <div class="telemetry-cell">
+            <div class="telemetry-cell-label">Voice Activity (VAD)</div>
+            <div class="telemetry-cell-value" id="hudVad">INACTIVE</div>
+          </div>
+          <div class="telemetry-cell">
+            <div class="telemetry-cell-label">Airframe Health</div>
+            <div class="telemetry-cell-value" id="hudHealth">1.00</div>
+          </div>
+          <div class="telemetry-cell">
+            <div class="telemetry-cell-label">CWT Fatigue Index</div>
+            <div class="telemetry-cell-value" id="hudFatigue">0.02</div>
+          </div>
+          <div class="telemetry-cell">
+            <div class="telemetry-cell-label">Peak Kurtosis</div>
+            <div class="telemetry-cell-value" id="hudKurtosis">3.00</div>
+          </div>
+          <div class="telemetry-cell">
+            <div class="telemetry-cell-label">Motor RPM</div>
+            <div class="telemetry-cell-value" id="hudRpm">0 RPM</div>
+          </div>
+        </div>
+
+        <!-- Control Grid -->
+        <div class="studio-grid">
+          <!-- Audio Ingestion & Telemetry Panel -->
+          <div class="studio-panel">
+            <div class="panel-title">
+              <span>Live Ingestion &amp; Rotor Telemetry</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);">16,000 Hz</span>
+            </div>
+
+            <div class="input-group">
+              <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <button class="btn btn-primary btn-sm" id="micToggleBtn">Start Microphone (Live WASM)</button>
+                <button class="btn btn-secondary btn-sm" id="testToneBtn">Feed Chirp Waveform</button>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);" id="micStatusMsg">
+                Microphone audio will be resampled and processed through the WASM core in 256-sample blocks.
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">Simulated Motor RPM (Autopilot Telemetry)</label>
+              <div class="slider-row">
+                <input type="range" class="slider" id="rpmSlider" min="0" max="8000" step="50" value="0">
+                <span class="slider-val" id="rpmVal">0 RPM</span>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem; margin-top: 0.75rem;">
+              <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; cursor: pointer;">
+                <input type="checkbox" id="notchCheck" checked>
+                <span>Propeller BPF Notch Bank</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; cursor: pointer;">
+                <input type="checkbox" id="cwtCheck" checked>
+                <span>CWT Wavelet Profiler</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Zero-Shot Keyword Enrollment Panel -->
+          <div class="studio-panel">
+            <div class="panel-title">
+              <span>Zero-Shot Klatt Phonetic Enrollment</span>
+              <span style="font-size: 0.75rem; color: var(--accent); font-family: var(--font-mono);">G2P + DTW</span>
+            </div>
+
+            <div class="input-group">
+              <label class="input-label" for="keywordInput">Keyword Phrase to Enroll</label>
+              <input type="text" class="text-input" id="keywordInput" value="take off" placeholder="e.g. take off, land, hover">
+              <div class="preset-chips">
+                <span class="chip" onclick="setKeyword('take off')">take off</span>
+                <span class="chip" onclick="setKeyword('land')">land</span>
+                <span class="chip" onclick="setKeyword('hover')">hover</span>
+                <span class="chip" onclick="setKeyword('plank')">plank</span>
+                <span class="chip" onclick="setKeyword('abort')">abort</span>
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label class="input-label">Detection Threshold</label>
+              <div class="slider-row">
+                <input type="range" class="slider" id="thresholdSlider" min="0.40" max="0.80" step="0.01" value="0.58">
+                <span class="slider-val" id="thresholdVal">0.58</span>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem;">
+              <button class="btn btn-accent btn-sm" id="enrollBtn">Enroll Keyword (WASM)</button>
+              <button class="btn btn-secondary btn-sm" id="listenSynthBtn">Listen to Synthesized Voice</button>
+              <button class="btn btn-secondary btn-sm" id="simTriggerBtn">Simulate Trigger Test</button>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--accent); margin-top: 0.5rem; font-family: var(--font-mono);" id="enrollStatusMsg">
+              Ready to enroll keywords via Klatt synthesis.
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
+    <!-- Architecture & Features -->
     <section id="features" class="grid">
       <div class="card">
         <div class="card-icon">&Xi;</div>
@@ -307,31 +619,25 @@
       </div>
     </section>
 
+    <!-- Quickstart Section -->
     <section id="quickstart" class="code-section">
-      <h2 style="font-size: 1.75rem; margin-bottom: 1.5rem; text-align: center;">Multi-Language Quickstart</h2>
+      <h2 style="font-size: 1.75rem; margin-bottom: 1.5rem; text-align: center;">Multi-Platform Quickstart</h2>
       <div class="code-box">
-<span style="color: #64748b;"># Rust (Cargo.toml)</span>
-[dependencies]
-sonon = "0.1.0"
+<span style="color: #64748b;">// WebAssembly in Browser (JavaScript / TypeScript)</span>
+const { instance } = await WebAssembly.instantiateStreaming(fetch('sonon.wasm'));
+const api = resolveSononWasmExports(instance);
+const handle = api.sonon_wasm_create(16000, 512, 160, 13);
 
-<span style="color: #64748b;">// Streaming Wake-Word Spotting in Pure Safe Rust</span>
-let mut engine = SononEngine::new(16000.0, 256, 128, 13);
-engine.enroll_keyword_from_text("take_off", "take off", 3.5);
+<span style="color: #64748b;">// Enroll text keyword via Klatt Formant Synthesizer</span>
+api.sonon_wasm_set_string_bytes("take off");
+api.sonon_wasm_enroll_text(handle, 8, 0.58);
 
-<span style="color: #64748b;">// Ingest live audio chunks</span>
-let events = engine.ingest_samples(&microphone_samples);
-for event in events {
-    println!("Detected: {} (confidence: {:.2})", event.keyword, event.confidence);
+<span style="color: #64748b;">// Streaming Ingestion via AudioWorkletNode</span>
+const detections = api.sonon_wasm_ingest(handle, samples.length);
+if (detections > 0) {
+    const keyword = api.sonon_wasm_get_last_keyword();
+    console.log(`Detected keyword: ${keyword}`);
 }
-
-<span style="color: #64748b;"># Python (pip install sonon)</span>
-from sonon import SononEngine
-engine = SononEngine(sample_rate=16000)
-engine.enroll("take_off", features, threshold=0.58)
-
-<span style="color: #64748b;"># Node.js / TypeScript (npm install @aerovexhq/sonon)</span>
-import { SononEngine } from '@aerovexhq/sonon';
-const engine = new SononEngine({ sampleRate: 16000 });
       </div>
     </section>
   </main>
@@ -341,17 +647,145 @@ const engine = new SononEngine({ sampleRate: 16000 });
   </footer>
 
   <script>
+    // --- Sonon WebAssembly Host Bridge ---
+    let wasmApi = null;
+    let engineHandle = 0;
+    let isWasmReady = false;
+
+    // Audio Context & Mic
+    let audioCtx = null;
+    let micStream = null;
+    let scriptNode = null;
+    let isMicActive = false;
+
+    // Canvas Visualization
     const canvas = document.getElementById('scopeCanvas');
     const ctx = canvas.getContext('2d');
-    let running = true;
-    let t = 0;
+    let displayWaveform = new Float32Array(512);
 
-    function draw() {
-      if (!running) return;
+    // Dynamic Symbol Resolver for Pure Safe Rust Exports
+    function resolveSononWasmExports(instance) {
+      const api = {};
+      for (const [key, value] of Object.entries(instance.exports)) {
+        const match = key.match(/(sonon_wasm_[a-zA-Z0-9_]+)$/);
+        if (match) {
+          api[match[1]] = value;
+        }
+      }
+      return api;
+    }
+
+    // Initialize WASM Module
+    async function initSononWasm() {
+      const statusText = document.getElementById('wasmStatusText');
+      const statusDot = document.getElementById('statusDot');
+
+      try {
+        let wasmModule;
+        if (typeof WebAssembly.instantiateStreaming === 'function') {
+          try {
+            wasmModule = await WebAssembly.instantiateStreaming(fetch('sonon.wasm'));
+          } catch (_) {
+            const resp = await fetch('sonon.wasm');
+            const bytes = await resp.arrayBuffer();
+            wasmModule = await WebAssembly.instantiate(bytes);
+          }
+        } else {
+          const resp = await fetch('sonon.wasm');
+          const bytes = await resp.arrayBuffer();
+          wasmModule = await WebAssembly.instantiate(bytes);
+        }
+
+        wasmApi = resolveSononWasmExports(wasmModule.instance);
+        console.log('Sonon WASM Exports resolved:', Object.keys(wasmApi).length);
+
+        // Create Default Sonon Engine Instance: 16kHz, 512 frame, 160 hop, 13 MFCC
+        engineHandle = wasmApi.sonon_wasm_create(16000.0, 512, 160, 13);
+        if (engineHandle === 0) {
+          throw new Error('Failed to create SononEngine in WASM');
+        }
+
+        // Enable Rotor Notch, CWT, and Motor Health Monitoring
+        wasmApi.sonon_wasm_enable_rotor_notch(engineHandle, 2, 4, 15.0);
+        wasmApi.sonon_wasm_enable_cwt_profiler(engineHandle, 2);
+        wasmApi.sonon_wasm_enable_health_monitoring(engineHandle);
+
+        // Pre-enroll default keyword
+        enrollTextKeyword('take off', 0.58);
+
+        isWasmReady = true;
+        statusText.textContent = 'WASM Engine Active (Pure Safe Rust, 16,000 Hz)';
+        statusDot.className = 'dot-pulse';
+      } catch (err) {
+        console.error('WASM Init Failed:', err);
+        statusText.textContent = 'WASM Offline (Static Simulation Mode)';
+        statusDot.className = 'dot-inactive';
+      }
+    }
+
+    // Helper: Write string into WASM string buffer
+    function writeWasmString(str) {
+      if (!wasmApi) return 0;
+      const bytes = new TextEncoder().encode(str);
+      for (let i = 0; i < bytes.length; i++) {
+        wasmApi.sonon_wasm_set_string_byte(i, bytes[i]);
+      }
+      return bytes.length;
+    }
+
+    // Helper: Read last detected keyword name from WASM
+    function readLastKeyword() {
+      if (!wasmApi) return '';
+      const len = wasmApi.sonon_wasm_get_last_keyword_len();
+      let res = '';
+      for (let i = 0; i < len; i++) {
+        res += String.fromCharCode(wasmApi.sonon_wasm_get_last_keyword_byte(i));
+      }
+      return res;
+    }
+
+    // Enroll Keyword from Text
+    function enrollTextKeyword(phrase, threshold) {
+      if (!wasmApi || !engineHandle) return;
+      const len = writeWasmString(phrase);
+      const frames = wasmApi.sonon_wasm_enroll_text(engineHandle, len, threshold);
+      const msg = document.getElementById('enrollStatusMsg');
+      if (frames > 0) {
+        msg.textContent = `Enrolled "${phrase}" (${frames} feature frames, threshold: ${threshold.toFixed(2)})`;
+      } else {
+        msg.textContent = `Enrollment failed for "${phrase}"`;
+      }
+    }
+
+    function setKeyword(word) {
+      document.getElementById('keywordInput').value = word;
+      const thresh = parseFloat(document.getElementById('thresholdSlider').value);
+      enrollTextKeyword(word, thresh);
+    }
+
+    // Flash Detection Alert
+    let bannerTimeout = null;
+    function triggerDetectionAlert(keyword, confidence) {
+      const banner = document.getElementById('detectionBanner');
+      const kwElem = document.getElementById('detectionKeyword');
+      const confElem = document.getElementById('detectionConfidence');
+
+      kwElem.textContent = `WAKE-WORD DETECTED: "${keyword.toUpperCase()}"`;
+      confElem.textContent = `Confidence: ${(confidence * 100).toFixed(1)}% | Sakoe-Chiba DTW Match`;
+      banner.style.display = 'block';
+
+      if (bannerTimeout) clearTimeout(bannerTimeout);
+      bannerTimeout = setTimeout(() => {
+        banner.style.display = 'none';
+      }, 3500);
+    }
+
+    // Oscilloscope Animation Loop
+    function renderWaveform() {
       ctx.fillStyle = '#06090e';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Draw grid
+      // Grid Lines
       ctx.strokeStyle = '#121824';
       ctx.lineWidth = 1;
       for (let x = 0; x < canvas.width; x += 40) {
@@ -361,36 +795,215 @@ const engine = new SononEngine({ sampleRate: 16000 });
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
       }
 
-      // Draw synthetic multi-frequency speech + rotor acoustics
+      // Waveform Line
       ctx.beginPath();
-      ctx.strokeStyle = '#06b6d4';
+      ctx.strokeStyle = isMicActive ? '#10b981' : '#06b6d4';
       ctx.lineWidth = 2;
 
       const midY = canvas.height / 2;
-      for (let x = 0; x < canvas.width; x++) {
-        const p = (x + t) * 0.05;
-        // Speech formants (F1, F2) + rotor modulation
-        const wave = Math.sin(p * 2.2) * 25 
-                   + Math.sin(p * 4.8) * 15 
-                   + Math.sin(p * 1.1 + t * 0.1) * 35 
-                   + (Math.random() - 0.5) * 6;
-        const y = midY + wave;
-        if (x === 0) ctx.moveTo(x, y);
+      const step = canvas.width / displayWaveform.length;
+
+      for (let i = 0; i < displayWaveform.length; i++) {
+        const x = i * step;
+        const y = midY + displayWaveform[i] * 70;
+        if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.stroke();
 
-      t += 2;
-      requestAnimationFrame(draw);
+      requestAnimationFrame(renderWaveform);
     }
-    requestAnimationFrame(draw);
+    requestAnimationFrame(renderWaveform);
 
-    const toggleBtn = document.getElementById('toggleSimBtn');
-    toggleBtn.addEventListener('click', () => {
-      running = !running;
-      toggleBtn.textContent = running ? 'Pause Visualizer' : 'Resume Visualizer';
-      if (running) requestAnimationFrame(draw);
+    // Telemetry HUD Refresh
+    function updateTelemetryHUD() {
+      if (!wasmApi || !engineHandle) return;
+
+      const vad = wasmApi.sonon_wasm_get_vad_active(engineHandle);
+      const hudVad = document.getElementById('hudVad');
+      if (vad === 1) {
+        hudVad.textContent = 'ACTIVE SPEECH';
+        hudVad.style.color = 'var(--accent)';
+      } else {
+        hudVad.textContent = 'SILENCE / NOISE';
+        hudVad.style.color = 'var(--text-muted)';
+      }
+
+      const health = wasmApi.sonon_wasm_get_health_score(engineHandle);
+      document.getElementById('hudHealth').textContent = health >= 0 ? health.toFixed(2) : '1.00';
+
+      const fatigue = wasmApi.sonon_wasm_get_cwt_fatigue_index(engineHandle);
+      document.getElementById('hudFatigue').textContent = fatigue >= 0 ? fatigue.toFixed(2) : '0.02';
+
+      const kurtosis = wasmApi.sonon_wasm_get_cwt_kurtosis(engineHandle);
+      document.getElementById('hudKurtosis').textContent = kurtosis >= 0 ? kurtosis.toFixed(2) : '3.00';
+    }
+    setInterval(updateTelemetryHUD, 150);
+
+    // UI Event Listeners
+    document.getElementById('thresholdSlider').addEventListener('input', (e) => {
+      document.getElementById('thresholdVal').textContent = parseFloat(e.target.value).toFixed(2);
     });
+
+    document.getElementById('enrollBtn').addEventListener('click', () => {
+      const phrase = document.getElementById('keywordInput').value.trim();
+      const thresh = parseFloat(document.getElementById('thresholdSlider').value);
+      enrollTextKeyword(phrase, thresh);
+    });
+
+    document.getElementById('rpmSlider').addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      document.getElementById('rpmVal').textContent = `${val} RPM`;
+      document.getElementById('hudRpm').textContent = `${val} RPM`;
+      if (wasmApi && engineHandle) {
+        wasmApi.sonon_wasm_update_rpm(engineHandle, val);
+      }
+    });
+
+    // Synthesize Speech and Play Audio
+    document.getElementById('listenSynthBtn').addEventListener('click', async () => {
+      if (!wasmApi || !engineHandle) return;
+      const phrase = document.getElementById('keywordInput').value.trim();
+      const len = writeWasmString(phrase);
+      const sampleCount = wasmApi.sonon_wasm_synthesize_text(engineHandle, len);
+
+      if (sampleCount === 0) return;
+
+      // Extract samples from WASM buffer
+      const samples = new Float32Array(sampleCount);
+      for (let i = 0; i < sampleCount; i++) {
+        samples[i] = wasmApi.sonon_wasm_get_input_sample(i);
+      }
+
+      // Update display waveform preview
+      for (let i = 0; i < Math.min(samples.length, displayWaveform.length); i++) {
+        displayWaveform[i] = samples[i * Math.floor(samples.length / displayWaveform.length)];
+      }
+
+      // Play through Web Audio
+      const ctxPlay = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const audioBuf = ctxPlay.createBuffer(1, sampleCount, 16000);
+      audioBuf.copyToChannel(samples, 0);
+      const source = ctxPlay.createBufferSource();
+      source.buffer = audioBuf;
+      source.connect(ctxPlay.destination);
+      source.start();
+    });
+
+    // Simulate Wake-Word Trigger Test
+    document.getElementById('simTriggerBtn').addEventListener('click', () => {
+      if (!wasmApi || !engineHandle) return;
+      const phrase = document.getElementById('keywordInput').value.trim();
+      const thresh = parseFloat(document.getElementById('thresholdSlider').value);
+      enrollTextKeyword(phrase, thresh);
+
+      const len = writeWasmString(phrase);
+      const sampleCount = wasmApi.sonon_wasm_synthesize_text(engineHandle, len);
+      if (sampleCount === 0) return;
+
+      // Ingest in chunks of 256 samples into WASM engine
+      let detectedCount = 0;
+      const chunkSize = 256;
+      let offset = 0;
+
+      while (offset < sampleCount) {
+        const count = Math.min(chunkSize, sampleCount - offset);
+        for (let i = 0; i < count; i++) {
+          const s = wasmApi.sonon_wasm_get_input_sample(offset + i);
+          wasmApi.sonon_wasm_set_input_sample(i, s);
+        }
+        detectedCount += wasmApi.sonon_wasm_ingest(engineHandle, count);
+        offset += count;
+      }
+
+      // Append trailing silence
+      for (let i = 0; i < 512; i++) wasmApi.sonon_wasm_set_input_sample(i, 0.0);
+      detectedCount += wasmApi.sonon_wasm_ingest(engineHandle, 512);
+
+      if (detectedCount > 0) {
+        const kw = readLastKeyword();
+        const conf = wasmApi.sonon_wasm_get_last_keyword_confidence();
+        triggerDetectionAlert(kw, conf);
+      }
+    });
+
+    // Live Microphone Audio Capture
+    const micBtn = document.getElementById('micToggleBtn');
+    micBtn.addEventListener('click', async () => {
+      if (isMicActive) {
+        // Stop Mic
+        if (micStream) micStream.getTracks().forEach(t => t.stop());
+        if (scriptNode) scriptNode.disconnect();
+        if (audioCtx) audioCtx.close();
+        isMicActive = false;
+        micBtn.textContent = 'Start Microphone (Live WASM)';
+        micBtn.className = 'btn btn-primary btn-sm';
+        document.getElementById('micStatusMsg').textContent = 'Microphone stopped.';
+        return;
+      }
+
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          }
+        });
+
+        const source = audioCtx.createMediaStreamSource(micStream);
+        scriptNode = audioCtx.createScriptProcessor(256, 1, 1);
+
+        scriptNode.onaudioprocess = (e) => {
+          const input = e.inputBuffer.getChannelData(0);
+          const n = input.length;
+
+          // Copy audio into WASM input buffer
+          if (wasmApi && engineHandle) {
+            for (let i = 0; i < n; i++) {
+              wasmApi.sonon_wasm_set_input_sample(i, input[i]);
+            }
+            const events = wasmApi.sonon_wasm_ingest(engineHandle, n);
+            if (events > 0) {
+              const kw = readLastKeyword();
+              const conf = wasmApi.sonon_wasm_get_last_keyword_confidence();
+              triggerDetectionAlert(kw, conf);
+            }
+          }
+
+          // Copy to visualizer buffer
+          for (let i = 0; i < Math.min(n, displayWaveform.length); i++) {
+            displayWaveform[i] = input[i];
+          }
+        };
+
+        source.connect(scriptNode);
+        scriptNode.connect(audioCtx.destination);
+
+        isMicActive = true;
+        micBtn.textContent = 'Stop Microphone';
+        micBtn.className = 'btn btn-danger btn-sm';
+        document.getElementById('micStatusMsg').textContent = 'Live microphone streaming at 16,000 Hz into Sonon WASM core.';
+      } catch (err) {
+        console.error('Microphone Access Error:', err);
+        document.getElementById('micStatusMsg').textContent = 'Error accessing microphone: ' + err.message;
+      }
+    });
+
+    // Synthetic Chirp Waveform Feed
+    document.getElementById('testToneBtn').addEventListener('click', () => {
+      let phase = 0;
+      for (let i = 0; i < displayWaveform.length; i++) {
+        phase += 0.05 + 0.1 * (i / displayWaveform.length);
+        displayWaveform[i] = Math.sin(phase) * 0.7;
+      }
+    });
+
+    // Initialize WASM on page load
+    window.addEventListener('DOMContentLoaded', initSononWasm);
   </script>
 </body>
 </html>
