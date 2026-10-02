@@ -12,6 +12,7 @@ pub mod aerossm;
 pub mod anticipatory;
 pub mod beamforming;
 pub mod capi;
+pub mod cwt;
 pub mod doppler;
 pub mod dtw;
 pub mod engine;
@@ -34,6 +35,10 @@ pub use aerossm::{AeroSsmCell, SincConvFrontend};
 pub use anticipatory::{AnticipatoryPrefixDecoder, InterlockState, WaldSprtConfig};
 pub use beamforming::{
     ArrayGeometry, DelayAndSumBeamformer, DoaEstimator, GccPhatEstimator, Point3D, SPEED_OF_SOUND,
+};
+pub use cwt::{
+    ContinuousWaveletFilterbank, CwtProfilerConfig, CwtScalogram, RotorDamageProfiler,
+    RotorDamageReport, WaveletType,
 };
 pub use doppler::{speed_of_sound_at_temp, DopplerCompensator, DopplerConfig};
 pub use dtw::{

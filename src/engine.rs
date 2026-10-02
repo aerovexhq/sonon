@@ -1,4 +1,5 @@
 use crate::aec::{AcousticEchoCanceller, AecConfig};
+use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::DtwMatcher;
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
@@ -46,6 +47,8 @@ pub struct SononEngine {
     spectral_subtraction: Option<SpectralSubtractionSuppressor>,
     health_monitor: Option<AcousticHealthMonitor>,
     latest_health_snapshot: Option<AirframeHealthSnapshot>,
+    cwt_profiler: Option<RotorDamageProfiler>,
+    latest_cwt_report: Option<RotorDamageReport>,
     feature_mode: FeatureMode,
     pre_emphasis_alpha: f32,
     last_sample: f32,
@@ -95,6 +98,8 @@ impl SononEngine {
             spectral_subtraction: None,
             health_monitor: None,
             latest_health_snapshot: None,
+            cwt_profiler: None,
+            latest_cwt_report: None,
             feature_mode: FeatureMode::LogMel,
             pre_emphasis_alpha: 0.97,
             last_sample: 0.0,
@@ -106,6 +111,32 @@ impl SononEngine {
             doppler: None,
             num_mel_filters,
         }
+    }
+
+    /// Enable Continuous Wavelet Transform (CWT) rotor micro-damage profiler.
+    pub fn enable_cwt_profiler(&mut self, config: CwtProfilerConfig, num_blades: usize) {
+        self.cwt_profiler = Some(RotorDamageProfiler::new(self.sample_rate, config, num_blades));
+    }
+
+    /// Disable CWT rotor micro-damage profiler.
+    pub fn disable_cwt_profiler(&mut self) {
+        self.cwt_profiler = None;
+        self.latest_cwt_report = None;
+    }
+
+    /// Access reference to active CWT rotor micro-damage profiler if enabled.
+    pub fn cwt_profiler(&self) -> Option<&RotorDamageProfiler> {
+        self.cwt_profiler.as_ref()
+    }
+
+    /// Access mutable reference to active CWT rotor micro-damage profiler if enabled.
+    pub fn cwt_profiler_mut(&mut self) -> Option<&mut RotorDamageProfiler> {
+        self.cwt_profiler.as_mut()
+    }
+
+    /// Return latest evaluated CWT rotor micro-damage diagnostic report.
+    pub fn latest_cwt_report(&self) -> Option<&RotorDamageReport> {
+        self.latest_cwt_report.as_ref()
     }
 
     /// Enable drone rotor blade pass frequency (BPF) harmonic notch filtering.
@@ -151,6 +182,9 @@ impl SononEngine {
         if let Some(ref mut monitor) = self.health_monitor {
             monitor.update_motor_rpm(0, rpm);
         }
+        if let Some(ref mut cwt) = self.cwt_profiler {
+            cwt.update_rpm(rpm);
+        }
     }
 
     /// Update multi-motor RPM telemetry (e.g., 4 motors on a quadcopter).
@@ -160,6 +194,11 @@ impl SononEngine {
         }
         if let Some(ref mut monitor) = self.health_monitor {
             monitor.update_motor_rpms(motor_rpms);
+        }
+        if let Some(ref mut cwt) = self.cwt_profiler {
+            if let Some(&rpm0) = motor_rpms.first() {
+                cwt.update_rpm(rpm0);
+            }
         }
     }
 
@@ -448,6 +487,12 @@ impl SononEngine {
                     self.latest_health_snapshot = Some(monitor.analyze_frame(&preemp, timestamp_sec));
                 }
 
+                // Run CWT non-stationary rotor micro-damage profiler if enabled
+                if let Some(ref mut cwt) = self.cwt_profiler {
+                    let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+                    self.latest_cwt_report = Some(cwt.analyze_frame(&preemp, timestamp_sec));
+                }
+
                 // Apply pre-emphasis filter to boost high-frequency formants and consonants
                 if self.pre_emphasis_alpha > 0.0 {
                     let mut prev = self.last_sample;
@@ -616,6 +661,7 @@ impl SononEngine {
         if let Some(ref mut d) = self.doppler {
             d.reset();
         }
+        self.latest_cwt_report = None;
         self.feature_history.clear();
         self.last_sample = 0.0;
         self.total_samples_processed = 0;

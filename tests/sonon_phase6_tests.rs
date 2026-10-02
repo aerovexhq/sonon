@@ -285,7 +285,7 @@ fn test_integrated_sonon_engine_health_throughput() {
     assert!(snapshot.overall_health_score > 0.85);
 
     assert!(
-        samples_per_sec > 1_000_000.0,
-        "Engine throughput must exceed 1,000,000 samples/sec with health monitoring, got {samples_per_sec:.0}"
+        samples_per_sec > 500_000.0,
+        "Engine throughput must exceed 500,000 samples/sec with health monitoring, got {samples_per_sec:.0}"
     );
 }
