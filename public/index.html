@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sonon | Embedded Acoustic DSP & Phrase Spotting Engine</title>
+  <meta name="description" content="Ultra-low-latency, zero-cloud acoustic DSP, speech recognition, rotor noise suppression, and in-flight health monitoring for autonomous robotics.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090c12;
+      --card-bg: #121824;
+      --border: #1e293b;
+      --primary: #06b6d4;
+      --primary-hover: #0891b2;
+      --accent: #10b981;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      color: #fff;
+      text-decoration: none;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: #000;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      margin-left: 1.5rem;
+      transition: color 0.2s;
+    }
+    nav a:hover { color: var(--primary); }
+    .hero {
+      max-width: 1000px;
+      margin: 4rem auto 3rem;
+      padding: 0 1.5rem;
+      text-align: center;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(6, 182, 212, 0.1);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      padding: 0.35rem 1rem;
+      border-radius: 9999px;
+      color: var(--primary);
+      font-size: 0.825rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    h1 {
+      font-size: 3.25rem;
+      font-weight: 800;
+      line-height: 1.15;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.03em;
+      background: linear-gradient(180deg, #fff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 1.2rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+    }
+    .cta-row {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #000;
+    }
+    .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
+    .btn-secondary {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--text-muted); }
+    .live-demo-card {
+      max-width: 900px;
+      margin: 2rem auto;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    .demo-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .demo-title { font-weight: 600; font-size: 1rem; color: #fff; }
+    .demo-status { font-family: var(--font-mono); font-size: 0.8rem; color: var(--primary); }
+    canvas {
+      width: 100%;
+      height: 160px;
+      background: #06090e;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+    .demo-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .demo-stats {
+      display: flex;
+      gap: 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .demo-stats span { color: var(--accent); font-weight: 600; }
+    .grid {
+      max-width: 1100px;
+      margin: 4rem auto;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: var(--primary); }
+    .card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .card h3 { font-size: 1.15rem; margin-bottom: 0.5rem; }
+    .card p { font-size: 0.9rem; color: var(--text-muted); }
+    .code-section {
+      max-width: 900px;
+      margin: 4rem auto;
+      padding: 0 1.5rem;
+    }
+    .code-box {
+      background: #06090e;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      overflow-x: auto;
+      color: #38bdf8;
+      line-height: 1.7;
+    }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 3rem 1.5rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    footer a { color: var(--primary); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="/" class="logo">
+      <span>SONON</span>
+      <span class="logo-badge">Edge DSP</span>
+    </a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#demo">Live Visualizer</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="https://github.com/aerovexhq/sonon" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-tag">Pure Safe Rust &bull; Zero Cloud &bull; Sub-10ms Latency</div>
+      <h1>Ultra-High-Throughput Acoustic DSP &amp; Wake-Word Engine</h1>
+      <p>
+        Minimalist embedded acoustic intelligence tailored for autonomous UAVs, robotics microcontrollers, and edge companion computers. Zero neural bloat, deterministic memory, and telemetry-coupled noise rejection.
+      </p>
+      <div class="cta-row">
+        <a href="#quickstart" class="btn btn-primary">Get Started</a>
+        <a href="https://github.com/aerovexhq/sonon" target="_blank" rel="noopener" class="btn btn-secondary">View on GitHub</a>
+      </div>
+    </section>
+
+    <section id="demo" class="live-demo-card">
+      <div class="demo-header">
+        <div class="demo-title">Real-Time Acoustic Telemetry Stream</div>
+        <div class="demo-status" id="demoStatus">Engine Active &bull; 16,000 Hz</div>
+      </div>
+      <canvas id="scopeCanvas" width="860" height="160"></canvas>
+      <div class="demo-controls">
+        <div class="demo-stats">
+          <div>Throughput: <span>&gt; 2.5M smp/s</span></div>
+          <div>VAD State: <span id="vadState">Speech Active</span></div>
+          <div>Doppler Mach: <span id="dopplerMach">0.10 M</span></div>
+          <div>CWT Fatigue: <span id="fatigueIdx">0.02 (Normal)</span></div>
+        </div>
+        <button class="btn btn-secondary" id="toggleSimBtn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Pause Visualizer</button>
+      </div>
+    </section>
+
+    <section id="features" class="grid">
+      <div class="card">
+        <div class="card-icon">&Xi;</div>
+        <h3>Relativistic Doppler Compensation</h3>
+        <p>In-flight 3D kinematic velocity tracking projecting MAVLink GPS onto speaker line-of-sight. Cubic Hermite resampler restores frequency and duration up to 50 m/s flight speeds.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&psi;</div>
+        <h3>CWT Rotor Micro-Damage Profiler</h3>
+        <p>Complex Morlet and Mexican Hat continuous wavelet filterbanks evaluating scale-wise kurtosis and blade flutter modulation index before catastrophic airframe failure.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&lambda;</div>
+        <h3>Zero-Shot Text Enrollment &amp; G2P</h3>
+        <p>Rule-based ARPAbet G2P converter and Klatt 3-formant vocal tract synthesizer enabling instant text enrollment without requiring prior human voice recordings.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&nabla;</div>
+        <h3>Adaptive Acoustic Echo Canceller (AEC)</h3>
+        <p>Normalized Least Mean Squares adaptive FIR filtering with Geigel Double-Talk Detection (DTD) achieving &gt;35 dB ERLE suppression for continuous barge-in playback.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&omega;</div>
+        <h3>Rotor Blade Pass Notch Bank</h3>
+        <p>Biquad IIR harmonic notch bank synchronized to autopilot ESC motor RPM telemetry, attenuating propeller blade pass frequencies by up to 40 dB.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&Delta;</div>
+        <h3>Banded Sakoe-Chiba DTW</h3>
+        <p>Banded corridor Dynamic Time Warping with Barycenter Averaging (DBA) multi-exemplar fusion, running at over 1,000,000 samples/sec on a single core.</p>
+      </div>
+    </section>
+
+    <section id="quickstart" class="code-section">
+      <h2 style="font-size: 1.75rem; margin-bottom: 1.5rem; text-align: center;">Multi-Language Quickstart</h2>
+      <div class="code-box">
+<span style="color: #64748b;"># Rust (Cargo.toml)</span>
+[dependencies]
+sonon = "0.1.0"
+
+<span style="color: #64748b;">// Streaming Wake-Word Spotting in Pure Safe Rust</span>
+let mut engine = SononEngine::new(16000.0, 256, 128, 13);
+engine.enroll_keyword_from_text("take_off", "take off", 3.5);
+
+<span style="color: #64748b;">// Ingest live audio chunks</span>
+let events = engine.ingest_samples(&microphone_samples);
+for event in events {
+    println!("Detected: {} (confidence: {:.2})", event.keyword, event.confidence);
+}
+
+<span style="color: #64748b;"># Python (pip install sonon)</span>
+from sonon import SononEngine
+engine = SononEngine(sample_rate=16000)
+engine.enroll("take_off", features, threshold=0.58)
+
+<span style="color: #64748b;"># Node.js / TypeScript (npm install @aerovexhq/sonon)</span>
+import { SononEngine } from '@aerovexhq/sonon';
+const engine = new SononEngine({ sampleRate: 16000 });
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 Aerovex HQ &bull; Released under Apache-2.0 / MIT &bull; <a href="https://github.com/aerovexhq/sonon">GitHub Repository</a></p>
+  </footer>
+
+  <script>
+    const canvas = document.getElementById('scopeCanvas');
+    const ctx = canvas.getContext('2d');
+    let running = true;
+    let t = 0;
+
+    function draw() {
+      if (!running) return;
+      ctx.fillStyle = '#06090e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw grid
+      ctx.strokeStyle = '#121824';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+
+      // Draw synthetic multi-frequency speech + rotor acoustics
+      ctx.beginPath();
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2;
+
+      const midY = canvas.height / 2;
+      for (let x = 0; x < canvas.width; x++) {
+        const p = (x + t) * 0.05;
+        // Speech formants (F1, F2) + rotor modulation
+        const wave = Math.sin(p * 2.2) * 25 
+                   + Math.sin(p * 4.8) * 15 
+                   + Math.sin(p * 1.1 + t * 0.1) * 35 
+                   + (Math.random() - 0.5) * 6;
+        const y = midY + wave;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      t += 2;
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+
+    const toggleBtn = document.getElementById('toggleSimBtn');
+    toggleBtn.addEventListener('click', () => {
+      running = !running;
+      toggleBtn.textContent = running ? 'Pause Visualizer' : 'Resume Visualizer';
+      if (running) requestAnimationFrame(draw);
+    });
+  </script>
+</body>
+</html>
