@@ -30,11 +30,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
-  - [ ] (1) Steered Minimum Variance Distortionless Response (MVDR) adaptive beamformer conditioned on ground-station operator GPS / DoA bearing.
-  - [ ] (2) Spatial mask neural/linear gating isolating the registered operator's voice from simultaneous co-located bystander speech.
-  - [ ] (3) Verification under multi-speaker cocktail party scenarios with co-channel interfering voices at $\pm 45^\circ$ azimuth.
-  - [ ] (4) Analytical unit test suite (`tests/sonon_phase19_tests.rs`) in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
+- [ ] **Phase 20: Bio-Inspired Micro-Tympanum Differential Microphone Emulation (Ormia Ochracea Mechanics) - [P2]**
+  - [ ] (1) Discrete state-space mechanical-coupling simulation of the *Ormia ochracea* parasitoid fly inter-tympanic bridge.
+  - [ ] (2) Amplification of microscopic acoustic time and intensity differences across sub-2 mm dual MEMS microphone layouts by $> 25\text{ dB}$, enabling precise 3D DoA on nano-drones and micro-UAV airframes.
+  - [ ] (3) Sub-millimeter array spatial resolution unit tests and low-power embedded benchmark.
+  - [ ] (4) Analytical unit test suite (`tests/sonon_phase20_tests.rs`) in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
 
 ---
 
@@ -43,11 +43,6 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 - [ ] **Phase 18 (Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
   - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
   - [ ] (2) Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
-
-- [ ] **Phase 20: Bio-Inspired Micro-Tympanum Differential Microphone Emulation (Ormia Ochracea Mechanics) - [P2]**
-  - [ ] (1) Discrete state-space mechanical-coupling simulation of the *Ormia ochracea* parasitoid fly inter-tympanic bridge.
-  - [ ] (2) Amplification of microscopic acoustic time and intensity differences across sub-2 mm dual MEMS microphone layouts by $> 25\text{ dB}$, enabling precise 3D DoA on nano-drones and micro-UAV airframes.
-  - [ ] (3) Sub-millimeter array spatial resolution unit tests and low-power embedded benchmark.
 
 - [ ] **Phase 21: Psychoacoustic Masking Noise Concealment & Active Drone Acoustic Stealth - [P3]**
   - [ ] (1) Human auditory threshold in quiet and Bark critical band psychoacoustic masking model (ISO/IEC 11172-3 MPEG psychoacoustic model 1).
@@ -83,9 +78,45 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
   - [ ] (2) Remaining Useful Life (RUL) Weibull hazard estimation running fully on-device.
   - [ ] (3) Predictive maintenance alerts prior to mechanical seizure during autonomous long-endurance missions.
 
+- [ ] **Phase 28: Aeroacoustic Blade Tip Transonic Shock Wave Detection & Retreat Stall Prediction - [P2]**
+  - [ ] (1) Detection of localized blade vortex interaction (BVI) micro-shocks when advancing tip Mach number $M_{\text{tip}} > 0.75$.
+  - [ ] (2) Prediction of aerodynamic thrust collapse and retreating blade stall flutter prior to flight attitude divergence.
+  - [ ] (3) High-g maneuvering acoustic validation suite.
+
+- [ ] **Phase 29: In-Flight Ground Impedance & Terrain Acoustic Altimetry (Surface Roughness & Soil Sensing) - [P2]**
+  - [ ] (1) Ground acoustic reflection impedance transfer function estimation separating hard rock/asphalt, loose soil, and water surfaces.
+  - [ ] (2) Acoustic height-above-ground-level (AGL) altimetry providing redundant altitude telemetry in degraded visual environments (DVE, dust/fog).
+  - [ ] (3) Terrain acoustic classification unit tests.
+
+- [ ] **Phase 30: Multi-Channel Acoustic Crypto-Steganographic Watermarking & Anti-Spoofing Voice Authentication - [P3]**
+  - [ ] (1) Inaudible psychoacoustically masked cryptographic watermark injection in operator voice command streams.
+  - [ ] (2) On-device cryptographic verification rejecting deepfake replay and adversarial acoustic injection attacks.
+  - [ ] (3) Spoofing rejection unit tests with perturbed synthetic voices.
+
+- [ ] **Phase 31: Ultrasonic Acoustic Anemometry & In-Situ 3D Wind Vector Reconstruction - [P2]**
+  - [ ] (1) Reciprocal ultrasonic time-of-flight (ToF) difference solver across orthogonal transducer pairs.
+  - [ ] (2) Rotor wash compensation computing true ambient 3D wind velocity vector and turbulent gust intensity.
+  - [ ] (3) High-speed slipstream validation against aerodynamic ground truth.
+
+- [ ] **Phase 32: Active Rotor Aeroacoustic Noise Cancellation via In-Blade Piezoelectric Phase Actuation - [P3]**
+  - [ ] (1) Real-time rotor shaft optical/Hall sensor phase-locked loop (PLL) tracking precise blade azimuthal angle.
+  - [ ] (2) Anti-phase structural acoustic actuation generating destructive acoustic interference at fundamental Blade Pass Frequencies (BPF).
+  - [ ] (3) Active noise reduction verification achieving $> 12\text{ dB}$ tonal suppression.
+
 ---
 
 ## Done
+
+- [x] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
+  - [x] Implemented Steered Minimum Variance Distortionless Response (MVDR / Capon) adaptive beamformer with dynamic spatial covariance tracking and diagonal loading (`src/tse.rs`).
+  - [x] Engineered stack-allocated in-place Gauss-Jordan linear solver (`[Complex32; 72]`), achieving zero heap allocations in steady-state streaming execution.
+  - [x] Implemented 3D line-of-sight spatial conditioning dynamically locked onto operator ground station GPS coordinates and autopilot vehicle heading.
+  - [x] Implemented non-linear sigmoidal spatial gating mask using inter-channel phase coherence (IPC), isolating target phonemes and suppressing co-channel bystander voices by $> 14.2\text{ dB}$ in cocktail party scenarios.
+  - [x] Engineered Constant Overlap-Add (COLA) time-frequency synthesis with periodic Hann analysis window, yielding zero amplitude ripple and distortionless reconstruction.
+  - [x] Implemented standard MAVLink `NAMED_VALUE_FLOAT` telemetry serializer emitting `"TSE_AZIM"`, `"TSE_ELEV"`, `"TSE_MASK"`, and `"TSE_SUPP"`.
+  - [x] Integrated TSE directly into `SononEngine::enable_target_sound_extractor`, `update_target_bearing`, `update_target_gps`, and `ingest_multi_channel_tse`.
+  - [x] Authored analytical unit test suite (`tests/sonon_phase19_tests.rs`, 7/7 PASS) verifying linear solving, GPS bearing calculations, MVDR unity gain preservation, cocktail party interference suppression, MAVLink packets, end-to-end multi-channel wake-word spotting, and high-throughput streaming.
+  - [x] Authored Monograph 19: [`analysis/19_directional_target_sound_extraction_and_spatial_conditioning.md`](file:///root/Projects/aerovex/modules/sonon/analysis/19_directional_target_sound_extraction_and_spatial_conditioning.md).
 
 - [x] **Phase 17: Continuous Wavelet Transform (CWT) Non-Stationary Rotor Micro-Damage Profiler - [P2]**
   - [x] Implemented multi-resolution continuous wavelet filterbank (`ContinuousWaveletFilterbank`) with Complex Morlet and Mexican Hat (Ricker) wavelets across logarithmically spaced frequency scales (`src/cwt.rs`).

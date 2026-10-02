@@ -1,4 +1,5 @@
 use crate::aec::{AcousticEchoCanceller, AecConfig};
+use crate::beamforming::ArrayGeometry;
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::DtwMatcher;
@@ -10,6 +11,7 @@ use crate::phonetic::{G2pEngine, KlattSynthesizer};
 use crate::ring_buffer::AudioRingBuffer;
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
+use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
 use crate::vad::EnergyVad;
 use crate::window::{Window, WindowType};
 use serde::{Deserialize, Serialize};
@@ -58,6 +60,8 @@ pub struct SononEngine {
     total_samples_processed: u64,
     aec: Option<AcousticEchoCanceller>,
     doppler: Option<DopplerCompensator>,
+    tse: Option<TargetSoundExtractor>,
+    latest_tse_report: Option<TseReport>,
     num_mel_filters: usize,
 }
 
@@ -109,6 +113,8 @@ impl SononEngine {
             total_samples_processed: 0,
             aec: None,
             doppler: None,
+            tse: None,
+            latest_tse_report: None,
             num_mel_filters,
         }
     }
@@ -275,11 +281,101 @@ impl SononEngine {
         }
     }
 
+    /// Enable Acoustic Directional Target Sound Extraction (TSE) with steered MVDR and spatial gating.
+    pub fn enable_target_sound_extractor(&mut self, geometry: ArrayGeometry, config: TseConfig) {
+        self.tse = Some(TargetSoundExtractor::new(geometry, self.sample_rate, config));
+    }
+
+    /// Disable Target Sound Extraction.
+    pub fn disable_target_sound_extractor(&mut self) {
+        self.tse = None;
+        self.latest_tse_report = None;
+    }
+
+    /// Access reference to active Target Sound Extractor if enabled.
+    pub fn target_sound_extractor(&self) -> Option<&TargetSoundExtractor> {
+        self.tse.as_ref()
+    }
+
+    /// Access mutable reference to active Target Sound Extractor if enabled.
+    pub fn target_sound_extractor_mut(&mut self) -> Option<&mut TargetSoundExtractor> {
+        self.tse.as_mut()
+    }
+
+    /// Return latest evaluated Target Sound Extraction diagnostic report.
+    pub fn latest_tse_report(&self) -> Option<&TseReport> {
+        self.latest_tse_report.as_ref()
+    }
+
     /// Update target operator line-of-sight bearing from azimuth and elevation angles in radians.
     pub fn update_target_bearing(&mut self, azimuth_rad: f32, elevation_rad: f32) {
         if let Some(ref mut d) = self.doppler {
             d.update_target_bearing(azimuth_rad, elevation_rad);
         }
+        if let Some(ref mut extractor) = self.tse {
+            extractor.set_target_bearing(azimuth_rad, elevation_rad);
+        }
+    }
+
+    /// Dynamically update steered target using GPS drone and operator coordinates with drone yaw heading.
+    pub fn update_target_gps(
+        &mut self,
+        drone_gps: GpsCoordinate,
+        operator_gps: GpsCoordinate,
+        drone_yaw_rad: f32,
+    ) {
+        if let Some(ref mut extractor) = self.tse {
+            extractor.set_target_gps(drone_gps, operator_gps, drone_yaw_rad);
+        }
+    }
+
+    /// Ingest multi-channel audio through steered MVDR and spatial mask gating, feeding extracted target stream into keyword spotting.
+    pub fn ingest_multi_channel_tse(
+        &mut self,
+        multi_channel_inputs: &[&[f32]],
+    ) -> Result<Vec<KeywordEvent>, String> {
+        let (hop, num_mics) = {
+            let tse = self.tse.as_ref().ok_or_else(|| "TSE is not enabled".to_string())?;
+            (tse.config().hop_size, tse.num_mics())
+        };
+
+        let num_channels = multi_channel_inputs.len();
+        if num_channels < num_mics {
+            return Err(format!(
+                "TSE requires at least {} channels, but only {} provided",
+                num_mics, num_channels
+            ));
+        }
+
+        let input_len = multi_channel_inputs[0].len();
+        for ch in multi_channel_inputs {
+            if ch.len() != input_len {
+                return Err("All multi-channel inputs must have identical length".to_string());
+            }
+        }
+
+        let mut events = Vec::new();
+        let mut offset = 0;
+        let mut extracted_mono = vec![0.0f32; hop];
+
+        while offset + hop <= input_len {
+            let mut slices = Vec::with_capacity(num_channels);
+            for ch in multi_channel_inputs {
+                slices.push(&ch[offset..offset + hop]);
+            }
+            let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+            let report = {
+                let tse = self.tse.as_mut().unwrap();
+                tse.process_block(&slices, &mut extracted_mono, timestamp_sec)
+            };
+            self.latest_tse_report = Some(report);
+
+            let block_events = self.ingest_samples(&extracted_mono);
+            events.extend(block_events);
+            offset += hop;
+        }
+
+        Ok(events)
     }
 
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).

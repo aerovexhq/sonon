@@ -27,6 +27,7 @@ pub mod ring_buffer;
 pub mod shm;
 pub mod spectral_subtraction;
 pub mod stft;
+pub mod tse;
 pub mod vad;
 pub mod window;
 
@@ -62,5 +63,9 @@ pub use ring_buffer::AudioRingBuffer;
 pub use shm::{ShmAudioChannel, ShmHeader, DEFAULT_SHM_PATH};
 pub use spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 pub use stft::FftProcessor;
+pub use tse::{
+    calculate_bearing_from_gps, Complex32, GpsCoordinate, SpatialConditioningTarget,
+    TargetSoundExtractor, TseConfig, TseReport,
+};
 pub use vad::EnergyVad;
 pub use window::{Window, WindowType};
