@@ -30,11 +30,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 20: Bio-Inspired Micro-Tympanum Differential Microphone Emulation (Ormia Ochracea Mechanics) - [P2]**
+- [ ] **Phase 21: Bio-Inspired Micro-Tympanum Differential Microphone Emulation (Ormia Ochracea Mechanics) - [P2]**
   - [ ] (1) Discrete state-space mechanical-coupling simulation of the *Ormia ochracea* parasitoid fly inter-tympanic bridge.
   - [ ] (2) Amplification of microscopic acoustic time and intensity differences across sub-2 mm dual MEMS microphone layouts by $> 25\text{ dB}$, enabling precise 3D DoA on nano-drones and micro-UAV airframes.
   - [ ] (3) Sub-millimeter array spatial resolution unit tests and low-power embedded benchmark.
-  - [ ] (4) Analytical unit test suite (`tests/sonon_phase20_tests.rs`) in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
+  - [ ] (4) Analytical unit test suite in pure safe Rust (`#![deny(unsafe_code)]`) with zero unicode emojis.
 
 ---
 
@@ -44,68 +44,92 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
   - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
   - [ ] (2) Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
 
-- [ ] **Phase 21: Psychoacoustic Masking Noise Concealment & Active Drone Acoustic Stealth - [P3]**
+- [ ] **Phase 22: Psychoacoustic Masking Noise Concealment & Active Drone Acoustic Stealth - [P3]**
   - [ ] (1) Human auditory threshold in quiet and Bark critical band psychoacoustic masking model (ISO/IEC 11172-3 MPEG psychoacoustic model 1).
   - [ ] (2) Real-time rotor harmonic tonal psychoacoustic audibility metric computing human detectability range in meters.
   - [ ] (3) Adaptive RPM micro-dithering and acoustic phase modulation recommendations minimizing human annoyance footprint without sacrificing lift thrust.
 
-- [ ] **Phase 22: Ultra-Low-Power RISC-V Vector / PULP-NN Micro-Engine Acceleration - [P3]**
+- [ ] **Phase 23: Ultra-Low-Power RISC-V Vector / PULP-NN Micro-Engine Acceleration - [P3]**
   - [ ] (1) RV32IMFD + XpulpNN / RISC-V Vector (RVV 1.0) intrinsic mapping in `#![no_std]` Rust for edge robotics microcontrollers.
   - [ ] (2) Zero-heap deterministic memory arena for battery-perched drone surveillance listening modes consuming $< 1\text{ mW}$ average power.
 
-- [ ] **Phase 23: Aerodynamic Wind Buffeting Incoherent Noise Separation & Turbulent Boundary Layer Suppression - [P2]**
+- [ ] **Phase 24: Aerodynamic Wind Buffeting Incoherent Noise Separation & Turbulent Boundary Layer Suppression - [P2]**
   - [ ] (1) Multi-channel convective turbulence phase-decorrelation filter separating acoustic sound waves from aerodynamic pressure fluctuations (pseudosound).
   - [ ] (2) Coherence-based turbulent boundary layer (TBL) suppression restoring voice SNR under $15\text{ m/s}$ forward laminar flight airflow.
   - [ ] (3) Unit tests simulating high-speed slipstream wind tunnels and turbulent eddy pressures.
 
-- [ ] **Phase 24: Acoustic Echolocation & 3D Obstacle Spatial Mapping for GPS-Denied Subterranean UAV Flight - [P2]**
+- [ ] **Phase 25: Acoustic Echolocation & 3D Obstacle Spatial Mapping for GPS-Denied Subterranean UAV Flight - [P2]**
   - [ ] (1) Ultrasonic and high-frequency acoustic chirp emit-receive pulse compression (chirp cross-correlation).
   - [ ] (2) 3D point cloud generation of cave walls, pipes, and obstacles from rotor acoustic reflections in zero-visibility smoke/darkness.
   - [ ] (3) Zero-drift acoustic range estimation verified against ground truth obstacle targets.
 
-- [ ] **Phase 25: Physics-Informed Aeroacoustic Inverse Source Reconstruction & Far-Field Pressure Directivity Mapping - [P2]**
+- [ ] **Phase 26: Physics-Informed Aeroacoustic Inverse Source Reconstruction & Far-Field Pressure Directivity Mapping - [P2]**
   - [ ] (1) Discrete Ffowcs Williams-Hawkings (FW-H) acoustic analogy integral solver computing loading and thickness dipole/quadrupole source strengths.
   - [ ] (2) In-flight 3D radiation directivity sphere reconstruction mapping ground acoustic footprint in real-time.
   - [ ] (3) Flight path optimization recommendations for noise-sensitive urban corridors.
 
-- [ ] **Phase 26: Distributed Multi-UAV Swarm Acoustic Mesh Beamforming & Synthetic Aperture Acoustic Radar - [P3]**
+- [ ] **Phase 27: Distributed Multi-UAV Swarm Acoustic Mesh Beamforming & Synthetic Aperture Acoustic Radar - [P3]**
   - [ ] (1) Clock-synchronized distributed array beamforming across multi-drone swarms via ultra-wideband (UWB) time-stamping.
   - [ ] (2) Giant synthetic aperture acoustic array ($> 50\text{ m}$ baseline) providing sub-degree angular localization of distant ground vehicles.
   - [ ] (3) Distributed spatial covariance consensus over mesh radio packets.
 
-- [ ] **Phase 27: Self-Supervised Acoustic Contrastive Learning for Zero-Shot UAV Motor Bearing Prognostics - [P2]**
+- [ ] **Phase 28: Self-Supervised Acoustic Contrastive Learning for Zero-Shot UAV Motor Bearing Prognostics - [P2]**
   - [ ] (1) Time-frequency contrastive encoder extracting invariant structural health embeddings under arbitrary RPM and payload variations.
   - [ ] (2) Remaining Useful Life (RUL) Weibull hazard estimation running fully on-device.
   - [ ] (3) Predictive maintenance alerts prior to mechanical seizure during autonomous long-endurance missions.
 
-- [ ] **Phase 28: Aeroacoustic Blade Tip Transonic Shock Wave Detection & Retreat Stall Prediction - [P2]**
+- [ ] **Phase 29: Aeroacoustic Blade Tip Transonic Shock Wave Detection & Retreat Stall Prediction - [P2]**
   - [ ] (1) Detection of localized blade vortex interaction (BVI) micro-shocks when advancing tip Mach number $M_{\text{tip}} > 0.75$.
   - [ ] (2) Prediction of aerodynamic thrust collapse and retreating blade stall flutter prior to flight attitude divergence.
   - [ ] (3) High-g maneuvering acoustic validation suite.
 
-- [ ] **Phase 29: In-Flight Ground Impedance & Terrain Acoustic Altimetry (Surface Roughness & Soil Sensing) - [P2]**
+- [ ] **Phase 30: In-Flight Ground Impedance & Terrain Acoustic Altimetry (Surface Roughness & Soil Sensing) - [P2]**
   - [ ] (1) Ground acoustic reflection impedance transfer function estimation separating hard rock/asphalt, loose soil, and water surfaces.
   - [ ] (2) Acoustic height-above-ground-level (AGL) altimetry providing redundant altitude telemetry in degraded visual environments (DVE, dust/fog).
   - [ ] (3) Terrain acoustic classification unit tests.
 
-- [ ] **Phase 30: Multi-Channel Acoustic Crypto-Steganographic Watermarking & Anti-Spoofing Voice Authentication - [P3]**
+- [ ] **Phase 31: Multi-Channel Acoustic Crypto-Steganographic Watermarking & Anti-Spoofing Voice Authentication - [P3]**
   - [ ] (1) Inaudible psychoacoustically masked cryptographic watermark injection in operator voice command streams.
   - [ ] (2) On-device cryptographic verification rejecting deepfake replay and adversarial acoustic injection attacks.
   - [ ] (3) Spoofing rejection unit tests with perturbed synthetic voices.
 
-- [ ] **Phase 31: Ultrasonic Acoustic Anemometry & In-Situ 3D Wind Vector Reconstruction - [P2]**
+- [ ] **Phase 32: Ultrasonic Acoustic Anemometry & In-Situ 3D Wind Vector Reconstruction - [P2]**
   - [ ] (1) Reciprocal ultrasonic time-of-flight (ToF) difference solver across orthogonal transducer pairs.
   - [ ] (2) Rotor wash compensation computing true ambient 3D wind velocity vector and turbulent gust intensity.
   - [ ] (3) High-speed slipstream validation against aerodynamic ground truth.
 
-- [ ] **Phase 32: Active Rotor Aeroacoustic Noise Cancellation via In-Blade Piezoelectric Phase Actuation - [P3]**
+- [ ] **Phase 33: Active Rotor Aeroacoustic Noise Cancellation via In-Blade Piezoelectric Phase Actuation - [P3]**
   - [ ] (1) Real-time rotor shaft optical/Hall sensor phase-locked loop (PLL) tracking precise blade azimuthal angle.
   - [ ] (2) Anti-phase structural acoustic actuation generating destructive acoustic interference at fundamental Blade Pass Frequencies (BPF).
   - [ ] (3) Active noise reduction verification achieving $> 12\text{ dB}$ tonal suppression.
 
+- [ ] **Phase 34: Acoustic Micro-Doppler Drone Radar Signature Discrimination & Friendly/Hostile Airframe Classification - [P2]**
+  - [ ] (1) Short-time acoustic Fourier transform (STAFT) blade flash spectral signature extraction discriminating multi-rotor blade counts and motor harmonics.
+  - [ ] (2) Low-complexity Nearest-Neighbor / DTW classifier isolating friendly fleet UAV acoustics from hostile drone acoustic incursions.
+  - [ ] (3) Automated airframe classification unit tests across quadcopter, hexacopter, and fixed-wing acoustic profiles.
+
+- [ ] **Phase 35: In-Situ Non-Intrusive Engine Combustion Acoustics & Turbine Flameout Detection - [P2]**
+  - [ ] (1) High-temperature acoustic exhaust sensor processing tracking thermoacoustic instabilities and Rayleigh criterion combustion oscillations.
+  - [ ] (2) Real-time flameout and compressor surge acoustic detection triggering autonomous emergency autorotation / glide protocols.
+  - [ ] (3) Unit tests simulating gas turbine acoustic pressure variations.
+
+- [ ] **Phase 36: Ultrasonic Boundary Layer Flow Separation Sensing & Aerodynamic Stall Acoustic Telemetry - [P2]**
+  - [ ] (1) Flush-mounted ultrasonic surface acoustic wave (SAW) sensors detecting boundary layer turbulence transition and laminar separation bubbles (LSB).
+  - [ ] (2) Real-time stall warning emission with critical angle-of-attack margin estimation prior to loss-of-control.
+  - [ ] (3) Flight wing stall aeroacoustic telemetry tests.
+
 ---
 
 ## Done
+
+- [x] **Phase 20: WebAssembly (WASM) Real-Time Browser AudioWorklet & Interactive Web Engine - [P1]**
+  - [x] Engineered 100% pure safe Rust WebAssembly FFI (`src/wasm.rs`, `#![deny(unsafe_code)]`) with handle management registry and synchronized shared static buffers (`WASM_INPUT_BUFFER`, `WASM_STRING_BUFFER`).
+  - [x] Compiled release WebAssembly binary `sonon.wasm` (798 KB uncompressed, ~185 KB compressed) executing STFT, Mel filterbank, PCEN, Sakoe-Chiba DTW, Klatt synthesis, and CWT telemetry directly inside client browsers.
+  - [x] Engineered Web Audio API & AudioWorklet / ScriptProcessor live microphone ingestion at 16,000 Hz with real-time VAD, rotor notch filtering, and DTW keyword spotting.
+  - [x] Implemented in-browser zero-shot Klatt formant speech synthesis with interactive audio audition playback via Web Audio `AudioBufferSourceNode`.
+  - [x] Upgraded interactive web visualizer deployed on `sonon.aerovex.net` via GitHub Pages featuring live oscilloscope, real-time telemetry HUD, keyword trigger banners, and CWT airframe health diagnostics.
+  - [x] Authored analytical unit test suite (`tests/sonon_phase20_tests.rs`, 5/5 PASS) verifying lifecycle, buffer I/O, zero-shot enrollment, live streaming detection, and CWT diagnostics.
+  - [x] Authored Monograph 20: [`analysis/20_webassembly_browser_audioworklet_and_edge_web_engine.md`](file:///root/Projects/aerovex/modules/sonon/analysis/20_webassembly_browser_audioworklet_and_edge_web_engine.md).
 
 - [x] **Phase 19: Acoustic Directional Target Sound Extraction (TSE) with 3D Spatial Conditioning - [P2]**
   - [x] Implemented Steered Minimum Variance Distortionless Response (MVDR / Capon) adaptive beamformer with dynamic spatial covariance tracking and diagonal loading (`src/tse.rs`).

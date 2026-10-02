@@ -29,6 +29,7 @@ pub mod spectral_subtraction;
 pub mod stft;
 pub mod tse;
 pub mod vad;
+pub mod wasm;
 pub mod window;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
