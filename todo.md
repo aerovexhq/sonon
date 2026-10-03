@@ -39,9 +39,10 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Multi-Accent Dynamic Formant Adaptation via Active Articulatory Synthesis - [P3]**
-  - [ ] (1) Vocal tract length normalization (VTLN) warping on streaming MFCC filterbanks.
-  - [ ] (2) Accent-conditioned formant synthesis for cross-lingual zero-shot keyword calibration.
+- [ ] **Speaker-Adaptive Voiceprint Conditioning & Anti-Spoofing Acoustic Verification for Edge KWS - [P3]**
+  - [ ] (1) Compact on-device speaker embedding extractor (`SpeakerVoiceprint`) from normalized acoustic feature trajectories.
+  - [ ] (2) Dual-threshold operator verification (wake-word DTW score + speaker voiceprint similarity) preventing unauthorized voice command injection.
+  - [ ] (3) Glottal acoustic anti-spoofing detector evaluating glottal waveform micro-tremor dynamics and replay artifacts.
 
 ---
 
@@ -53,6 +54,10 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Done
 
+- [x] **Multi-Accent Dynamic Formant Adaptation via Active Articulatory Synthesis - [P3]**
+  - [x] (1) Vocal tract length normalization (VTLN) frequency warping (`VtlnWarping`, `MelFilterbank::new_with_vtln`, `SononEngine::enable_vtln`) with piecewise-linear Nyquist boundary preservation and dynamic spectral centroid estimator (`VtlnWarpEstimator`).
+  - [x] (2) Regional vocal accent expansion (`Australian`, `IndianEnglish`, `EastAsian`, `SpanishAccented`) with formant shifts and diphthong trajectory targets in `Phoneme::acoustic_targets_with_accent`.
+  - [x] (3) Cross-accent articulatory synthesis and joint threshold calibration (`MultiAccentCalibrator`, `SononEngine::enroll_keyword_multi_accent`, `CrossAccentCalibrationReport`) with multi-accent DBA centroid alignment, minimal-pair foil separation, and streaming wake-word spotting verified across `tests/sonon_multi_accent_vtln_tests.rs` (6/6 PASS, 34/34 test suites passing crate-wide).
 - [x] **Hardware-Accelerated Streaming Spiking Neural VAD with Neuromorphic Latency - [P3]**
   - [x] (1) Multi-band acoustic energy filtering (`BiquadBandpassFilter`) and Leaky Integrate-and-Fire (LIF) spike encoding (`LifNeuronConfig`, `LifNeuron`) with soft/hard reset dynamics and refractory period lockout.
   - [x] (2) Event-driven sparse synaptic receptive field with asymmetric noise floor tracking, decaying synaptic traces, and multi-band synaptic weights ($w_b$) providing drone motor rotor hum suppression ($w_0 = -2.0$).

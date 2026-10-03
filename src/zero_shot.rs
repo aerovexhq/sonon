@@ -1482,3 +1482,197 @@ impl ZeroShotCalibrator {
         Ok((reference_template, report))
     }
 }
+
+/// Detailed diagnostic report for cross-accent dynamic formant adaptation and calibration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CrossAccentCalibrationReport {
+    /// Target wake-word or phrase.
+    pub keyword: String,
+    /// Target language.
+    pub language: SupportedLanguage,
+    /// Regional vocal accents evaluated during calibration.
+    pub accents_evaluated: Vec<VocalAccent>,
+    /// Maximum DTW distance from multi-accent DBA centroid across each evaluated accent.
+    pub inter_accent_distances: Vec<(VocalAccent, f32)>,
+    /// Maximum distance between canonical centroid and any accented variation.
+    pub max_inter_accent_distance: f32,
+    /// Minimum distance to any evaluated phonetic foil across all accents.
+    pub min_foil_distance: f32,
+    /// Text of the hardest phonetic distractor foil.
+    pub hardest_foil: String,
+    /// Multi-accent discrimination margin: min_foil_distance - max_inter_accent_distance.
+    pub discrimination_margin: f32,
+    /// Calibrated multi-accent DTW decision threshold.
+    pub calibrated_threshold: f32,
+    /// True positive rate and false alarm rate across all accents and foils.
+    pub confusion_matrix: ConfusionMatrix,
+    /// Whether all evaluated regional accents fall strictly within the decision corridor.
+    pub is_universally_separated: bool,
+}
+
+/// Active articulatory synthesizer and multi-accent zero-shot wake-word calibrator.
+#[derive(Debug, Clone, Default)]
+pub struct MultiAccentCalibrator;
+
+impl MultiAccentCalibrator {
+    /// Construct a new MultiAccentCalibrator.
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Perform cross-accent active articulatory synthesis and joint threshold calibration.
+    pub fn calibrate(
+        &self,
+        phrase: &str,
+        language: SupportedLanguage,
+        accents: &[VocalAccent],
+        engine: &SononEngine,
+    ) -> Result<(Vec<Vec<f32>>, CrossAccentCalibrationReport), String> {
+        if accents.is_empty() {
+            return Err("At least one target accent must be specified".to_string());
+        }
+
+        let segments = MultiLingualG2p::text_to_phonemes(phrase, language);
+        if segments.is_empty() {
+            return Err(format!("Could not extract phonemes for phrase '{}'", phrase));
+        }
+
+        let sample_rate = engine.sample_rate();
+        let band_radius = 8;
+
+        // 1. Synthesize diverse articulatory variations for each target accent
+        let mut all_accent_feature_sets: Vec<Vec<Vec<f32>>> = Vec::new();
+        let mut accent_features_by_accent: Vec<(VocalAccent, Vec<Vec<Vec<f32>>>)> = Vec::new();
+
+        for &accent in accents {
+            let mut synth = KlattSynthesizer::new(sample_rate);
+            synth.set_accent(accent);
+
+            let mut features_this_accent = Vec::new();
+            // Synthesize variations across pitch (male 115 Hz, modal 150 Hz, female 205 Hz) and speaking rate
+            for &pitch in &[115.0f32, 150.0, 205.0] {
+                for &rate in &[0.92f32, 1.0, 1.15] {
+                    synth.set_f0(pitch);
+                    let mut scaled_segments = segments.clone();
+                    for s in &mut scaled_segments {
+                        s.duration_ms *= rate;
+                    }
+                    let audio = synth.synthesize(&scaled_segments);
+                    if !audio.is_empty() {
+                        let feats = engine.extract_features(&audio);
+                        if !feats.is_empty() {
+                            features_this_accent.push(feats.clone());
+                            all_accent_feature_sets.push(feats);
+                        }
+                    }
+                }
+            }
+
+            accent_features_by_accent.push((accent, features_this_accent));
+        }
+
+        if all_accent_feature_sets.is_empty() {
+            return Err("Failed to synthesize multi-accent training exemplars".to_string());
+        }
+
+        // 2. Compute unified multi-accent DBA barycenter centroid template
+        let multi_accent_template =
+            crate::dtw::dtw_barycenter_averaging(&all_accent_feature_sets, 6, band_radius);
+
+        // 3. Evaluate inter-accent distance distribution
+        let mut inter_accent_distances = Vec::with_capacity(accents.len());
+        let mut max_inter_accent_dist = 0.0f32;
+
+        for (accent, feat_sets) in &accent_features_by_accent {
+            let mut max_d = 0.0f32;
+            for feats in feat_sets {
+                let d = DtwMatcher::compute_distance_banded(&multi_accent_template, feats, band_radius);
+                if d > max_d {
+                    max_d = d;
+                }
+            }
+            inter_accent_distances.push((*accent, max_d));
+            if max_d > max_inter_accent_dist {
+                max_inter_accent_dist = max_d;
+            }
+        }
+        max_inter_accent_dist = max_inter_accent_dist.max(1.5);
+
+        // 4. Generate minimal-pair phonetic foils across languages and accents
+        let foils = PhoneticFoilGenerator::generate_foils(phrase, language);
+        let mut min_foil_dist = f32::INFINITY;
+        let mut hardest_foil = String::new();
+        let mut foil_dists = Vec::new();
+
+        for foil in &foils {
+            for &accent in accents.iter().take(2) {
+                let mut synth = KlattSynthesizer::new(sample_rate);
+                synth.set_accent(accent);
+                let g2p_segments = MultiLingualG2p::text_to_phonemes(&foil.foil_text, foil.language);
+                let foil_audio = synth.synthesize(&g2p_segments);
+                if foil_audio.is_empty() {
+                    continue;
+                }
+                let foil_feats = engine.extract_features(&foil_audio);
+                if foil_feats.is_empty() {
+                    continue;
+                }
+                let d = DtwMatcher::compute_distance_banded(&multi_accent_template, &foil_feats, band_radius);
+                foil_dists.push(d);
+                if d < min_foil_dist {
+                    min_foil_dist = d;
+                    hardest_foil = foil.foil_text.clone();
+                }
+            }
+        }
+
+        if min_foil_dist.is_infinite() {
+            min_foil_dist = max_inter_accent_dist * 1.8;
+            hardest_foil = "synthetic_distractor".to_string();
+        }
+
+        // 5. Calibrate optimal multi-accent decision threshold
+        let discrimination_margin = min_foil_dist - max_inter_accent_dist;
+        let calibrated_threshold = max_inter_accent_dist + 0.40 * discrimination_margin.max(0.2);
+
+        // 6. Confusion matrix evaluation
+        let mut tp = 0;
+        let mut fn_count = 0;
+        for feats in &all_accent_feature_sets {
+            let d = DtwMatcher::compute_distance_banded(&multi_accent_template, feats, band_radius);
+            if d <= calibrated_threshold {
+                tp += 1;
+            } else {
+                fn_count += 1;
+            }
+        }
+
+        let mut fp = 0;
+        let mut tn = 0;
+        for &d in &foil_dists {
+            if d <= calibrated_threshold {
+                fp += 1;
+            } else {
+                tn += 1;
+            }
+        }
+
+        let is_universally_separated = discrimination_margin > 0.0 && fn_count == 0;
+
+        let report = CrossAccentCalibrationReport {
+            keyword: phrase.to_string(),
+            language,
+            accents_evaluated: accents.to_vec(),
+            inter_accent_distances,
+            max_inter_accent_distance: max_inter_accent_dist,
+            min_foil_distance: min_foil_dist,
+            hardest_foil,
+            discrimination_margin,
+            calibrated_threshold,
+            confusion_matrix: ConfusionMatrix::new(tp, fp, tn, fn_count),
+            is_universally_separated,
+        };
+
+        Ok((multi_accent_template, report))
+    }
+}

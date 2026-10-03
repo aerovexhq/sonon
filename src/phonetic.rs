@@ -97,6 +97,29 @@ pub enum VocalAccent {
     ReceivedPronunciation,
     /// International / non-native English with generalized vowel centralization.
     International,
+    /// Australian English with vowel raising ([AE] -> [EH]) and broad diphthong glides.
+    Australian,
+    /// Indian English with retroflex F3 depression and monophthongized vowels.
+    IndianEnglish,
+    /// East Asian L2 English with vowel centralization and epenthesis.
+    EastAsian,
+    /// Spanish-accented English with 5-vowel phoneme collapse and short VOT.
+    SpanishAccented,
+}
+
+impl VocalAccent {
+    /// List of all supported regional vocal accents.
+    pub fn all_supported() -> &'static [VocalAccent] {
+        &[
+            VocalAccent::GeneralAmerican,
+            VocalAccent::ReceivedPronunciation,
+            VocalAccent::International,
+            VocalAccent::Australian,
+            VocalAccent::IndianEnglish,
+            VocalAccent::EastAsian,
+            VocalAccent::SpanishAccented,
+        ]
+    }
 }
 
 impl Default for VocalAccent {
@@ -531,6 +554,98 @@ impl Phoneme {
                 }
                 target
             }
+            VocalAccent::Australian => {
+                match self {
+                    Phoneme::AE => {
+                        target.f1 *= 0.84;
+                        target.f2 *= 1.08;
+                    }
+                    Phoneme::AA => {
+                        target.f1 *= 0.90;
+                        target.f2 *= 0.88;
+                    }
+                    Phoneme::IY => {
+                        target.f1 *= 1.25;
+                        target.f2 *= 0.93;
+                    }
+                    Phoneme::ER => {
+                        target.f3 *= 1.20;
+                    }
+                    _ => {}
+                }
+                target
+            }
+            VocalAccent::IndianEnglish => {
+                match self {
+                    Phoneme::T | Phoneme::D | Phoneme::N | Phoneme::L => {
+                        target.f3 *= 0.82;
+                    }
+                    Phoneme::EY => {
+                        target.f1 = 500.0;
+                        target.f2 = 1850.0;
+                    }
+                    Phoneme::OW => {
+                        target.f1 = 500.0;
+                        target.f2 = 950.0;
+                    }
+                    Phoneme::W => {
+                        target.f2 *= 1.15;
+                    }
+                    Phoneme::V => {
+                        target.friction_amp *= 0.6;
+                    }
+                    _ => {}
+                }
+                target
+            }
+            VocalAccent::EastAsian => {
+                if self.is_vowel() {
+                    target.f1 = target.f1 * 0.82 + 500.0 * 0.18;
+                    target.f2 = target.f2 * 0.82 + 1500.0 * 0.18;
+                }
+                match self {
+                    Phoneme::AE => {
+                        target.f1 = 680.0;
+                        target.f2 = 1350.0;
+                    }
+                    Phoneme::UW => {
+                        target.f2 = 1350.0;
+                    }
+                    Phoneme::ER => {
+                        target.f3 = 2400.0;
+                    }
+                    Phoneme::P | Phoneme::T | Phoneme::K | Phoneme::B | Phoneme::D | Phoneme::G => {
+                        target.default_duration_ms *= 0.85;
+                    }
+                    _ => {}
+                }
+                target
+            }
+            VocalAccent::SpanishAccented => {
+                match self {
+                    Phoneme::IH => {
+                        target.f1 = 310.0;
+                        target.f2 = 2200.0;
+                    }
+                    Phoneme::UH => {
+                        target.f1 = 340.0;
+                        target.f2 = 900.0;
+                    }
+                    Phoneme::AE => {
+                        target.f1 = 700.0;
+                        target.f2 = 1250.0;
+                    }
+                    Phoneme::AO => {
+                        target.f1 = 520.0;
+                        target.f2 = 950.0;
+                    }
+                    Phoneme::P | Phoneme::T | Phoneme::K => {
+                        target.aspiration_amp = 0.0;
+                    }
+                    _ => {}
+                }
+                target
+            }
         }
     }
 
@@ -560,6 +675,67 @@ impl Phoneme {
                 start.f2 = start.f2 * 0.90 + 1500.0 * 0.10;
                 end.f1 = end.f1 * 0.90 + 500.0 * 0.10;
                 end.f2 = end.f2 * 0.90 + 1500.0 * 0.10;
+                Some((start, end))
+            }
+            VocalAccent::Australian => {
+                match self {
+                    Phoneme::EY => {
+                        start.f1 = 680.0;
+                        start.f2 = 1550.0;
+                    }
+                    Phoneme::OW => {
+                        start.f1 = 520.0;
+                        start.f2 = 1400.0;
+                    }
+                    Phoneme::AY => {
+                        start.f1 = 750.0;
+                        start.f2 = 1100.0;
+                    }
+                    _ => {}
+                }
+                Some((start, end))
+            }
+            VocalAccent::IndianEnglish => {
+                match self {
+                    Phoneme::EY => {
+                        start.f1 = 500.0;
+                        start.f2 = 1850.0;
+                        end.f1 = 500.0;
+                        end.f2 = 1850.0;
+                    }
+                    Phoneme::OW => {
+                        start.f1 = 500.0;
+                        start.f2 = 950.0;
+                        end.f1 = 500.0;
+                        end.f2 = 950.0;
+                    }
+                    _ => {}
+                }
+                Some((start, end))
+            }
+            VocalAccent::EastAsian => {
+                start.f1 = start.f1 * 0.85 + 500.0 * 0.15;
+                start.f2 = start.f2 * 0.85 + 1500.0 * 0.15;
+                end.f1 = end.f1 * 0.85 + 500.0 * 0.15;
+                end.f2 = end.f2 * 0.85 + 1500.0 * 0.15;
+                Some((start, end))
+            }
+            VocalAccent::SpanishAccented => {
+                match self {
+                    Phoneme::EY => {
+                        start.f1 = 480.0;
+                        start.f2 = 1900.0;
+                        end.f1 = 300.0;
+                        end.f2 = 2200.0;
+                    }
+                    Phoneme::OW => {
+                        start.f1 = 500.0;
+                        start.f2 = 950.0;
+                        end.f1 = 340.0;
+                        end.f2 = 900.0;
+                    }
+                    _ => {}
+                }
                 Some((start, end))
             }
         }
