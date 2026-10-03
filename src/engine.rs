@@ -6,7 +6,7 @@ use crate::aeroacoustics::{
 use crate::beamforming::{ArrayGeometry, Point3D};
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
-use crate::dtw::{DtwMatcher, StreamingDtwConfig};
+use crate::dtw::{ConfusionMatrix, DtwMatcher, StreamingDtwConfig};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -1318,4 +1318,115 @@ impl SononEngine {
         self.last_sample = 0.0;
         self.total_samples_processed = 0;
     }
+
+    /// Returns standardized minimal-pair phonetic foil phrases for key autonomous robotics keywords.
+    pub fn phonetic_foils_for_keyword(keyword: &str) -> Vec<&'static str> {
+        let norm = keyword.trim().to_lowercase();
+        match norm.as_str() {
+            "take off" | "take_off" => vec!["shake off", "make off", "lake loft", "fake off"],
+            "land" => vec!["hand", "band", "sand", "stand", "grand"],
+            "hold" | "hold position" => vec!["cold", "bold", "fold", "gold", "sold"],
+            "abort" => vec!["report", "support", "sport", "court"],
+            "emergency" => vec!["urgency", "agency", "clergy"],
+            _ => vec!["negative", "standby", "weather", "altitude"],
+        }
+    }
+
+    /// Evaluates wake-word spotting discrimination on target positive utterances vs negative out-of-vocabulary / phonetic foil utterances.
+    pub fn evaluate_keyword_discrimination(
+        &mut self,
+        keyword: &str,
+        positive_utterances: &[Vec<f32>],
+        negative_utterances: &[Vec<f32>],
+    ) -> EvaluationReport {
+        let mut tp = 0;
+        let mut fn_count = 0;
+        let mut fp = 0;
+        let mut tn = 0;
+
+        let mut pos_dists = Vec::new();
+        let mut neg_dists = Vec::new();
+
+        for pos in positive_utterances {
+            self.reset();
+            let events = self.ingest_samples(pos);
+            let matched = events.iter().any(|e| e.keyword == keyword);
+            if matched {
+                tp += 1;
+            } else {
+                fn_count += 1;
+            }
+
+            // Extract best matching DTW distance for statistical margin analysis
+            let feats = self.extract_features(pos);
+            if let Some(template) = self.dtw.templates().iter().find(|t| t.name == keyword) {
+                let dist = DtwMatcher::compute_distance_banded(
+                    &feats,
+                    &template.features,
+                    template.band_radius,
+                );
+                if dist.is_finite() {
+                    pos_dists.push(dist);
+                }
+            }
+        }
+
+        for neg in negative_utterances {
+            self.reset();
+            let events = self.ingest_samples(neg);
+            let matched = events.iter().any(|e| e.keyword == keyword);
+            if matched {
+                fp += 1;
+            } else {
+                tn += 1;
+            }
+
+            let feats = self.extract_features(neg);
+            if let Some(template) = self.dtw.templates().iter().find(|t| t.name == keyword) {
+                let dist = DtwMatcher::compute_distance_banded(
+                    &feats,
+                    &template.features,
+                    template.band_radius,
+                );
+                if dist.is_finite() {
+                    neg_dists.push(dist);
+                }
+            }
+        }
+
+        let mean_pos = if pos_dists.is_empty() {
+            0.0
+        } else {
+            pos_dists.iter().sum::<f32>() / (pos_dists.len() as f32)
+        };
+
+        let mean_neg = if neg_dists.is_empty() {
+            0.0
+        } else {
+            neg_dists.iter().sum::<f32>() / (neg_dists.len() as f32)
+        };
+
+        EvaluationReport {
+            keyword: keyword.to_string(),
+            matrix: ConfusionMatrix::new(tp, fp, tn, fn_count),
+            mean_positive_distance: mean_pos,
+            mean_negative_distance: mean_neg,
+            discrimination_margin: mean_neg - mean_pos,
+        }
+    }
+}
+
+/// Comprehensive keyword evaluation report detailing empirical confusion matrix and acoustic discrimination margins.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EvaluationReport {
+    /// Evaluated keyword name.
+    pub keyword: String,
+    /// Confusion matrix statistics (TP, FP, TN, FN).
+    pub matrix: ConfusionMatrix,
+    /// Mean DTW distance of true positive utterances to reference template.
+    pub mean_positive_distance: f32,
+    /// Mean DTW distance of negative foil utterances to reference template.
+    pub mean_negative_distance: f32,
+    /// Acoustic discrimination margin: mean negative distance minus mean positive distance.
+    pub discrimination_margin: f32,
 }

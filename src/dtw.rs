@@ -1,5 +1,7 @@
 //! Dynamic Time Warping (DTW) alignment, Sakoe-Chiba band pruning, and DBA template matcher.
 
+use serde::{Deserialize, Serialize};
+
 /// Distance metric between two feature vectors.
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
     assert_eq!(a.len(), b.len(), "Feature vectors must have equal dimension");
@@ -421,4 +423,95 @@ pub fn calibrate_threshold(
     let mean_dist = total_dist / (pairs as f32);
     // Add margin factor (e.g. 1.25x to 1.5x) to accommodate ambient variation
     (mean_dist * margin_factor).max(max_pairwise_dist * 1.25).max(0.40)
+}
+
+/// Binary classification confusion matrix for wake-word and acoustic phrase spotting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ConfusionMatrix {
+    /// True positive occurrences (keyword correctly detected).
+    pub true_positives: usize,
+    /// False positive occurrences (negative/foil falsely flagged as keyword).
+    pub false_positives: usize,
+    /// True negative occurrences (negative/foil correctly rejected).
+    pub true_negatives: usize,
+    /// False negative occurrences (keyword failed to trigger).
+    pub false_negatives: usize,
+}
+
+impl ConfusionMatrix {
+    /// Construct a new confusion matrix with raw counts.
+    pub fn new(tp: usize, fp: usize, tn: usize, fn_count: usize) -> Self {
+        Self {
+            true_positives: tp,
+            false_positives: fp,
+            true_negatives: tn,
+            false_negatives: fn_count,
+        }
+    }
+
+    /// Return total evaluation count.
+    pub fn total_samples(&self) -> usize {
+        self.true_positives + self.false_positives + self.true_negatives + self.false_negatives
+    }
+
+    /// Compute Precision: TP / (TP + FP).
+    pub fn precision(&self) -> f32 {
+        let denom = self.true_positives + self.false_positives;
+        if denom == 0 {
+            1.0
+        } else {
+            (self.true_positives as f32) / (denom as f32)
+        }
+    }
+
+    /// Compute Recall (Sensitivity / True Positive Rate): TP / (TP + FN).
+    pub fn recall(&self) -> f32 {
+        let denom = self.true_positives + self.false_negatives;
+        if denom == 0 {
+            1.0
+        } else {
+            (self.true_positives as f32) / (denom as f32)
+        }
+    }
+
+    /// Compute F1 Score harmonic mean: 2 * (P * R) / (P + R).
+    pub fn f1_score(&self) -> f32 {
+        let p = self.precision();
+        let r = self.recall();
+        if p + r == 0.0 {
+            0.0
+        } else {
+            2.0 * (p * r) / (p + r)
+        }
+    }
+
+    /// Compute False Positive Rate (FPR / Fallout): FP / (FP + TN).
+    pub fn false_positive_rate(&self) -> f32 {
+        let denom = self.false_positives + self.true_negatives;
+        if denom == 0 {
+            0.0
+        } else {
+            (self.false_positives as f32) / (denom as f32)
+        }
+    }
+
+    /// Compute False Negative Rate (FNR / Miss Rate): FN / (FN + TP).
+    pub fn false_negative_rate(&self) -> f32 {
+        let denom = self.false_negatives + self.true_positives;
+        if denom == 0 {
+            0.0
+        } else {
+            (self.false_negatives as f32) / (denom as f32)
+        }
+    }
+
+    /// Compute Classification Accuracy: (TP + TN) / Total.
+    pub fn accuracy(&self) -> f32 {
+        let total = self.total_samples();
+        if total == 0 {
+            1.0
+        } else {
+            ((self.true_positives + self.true_negatives) as f32) / (total as f32)
+        }
+    }
 }

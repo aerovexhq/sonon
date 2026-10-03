@@ -3,7 +3,9 @@
 
 #![deny(unsafe_code)]
 
+use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
+use std::path::Path;
 
 /// Standard ARPAbet phoneme representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -84,6 +86,62 @@ pub struct FormantTarget {
     pub aspiration_amp: f32,
     pub friction_amp: f32,
     pub default_duration_ms: f32,
+}
+
+/// Regional accent / dialect profile for acoustic vowel formant adaptation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VocalAccent {
+    /// General American English standard formant targets.
+    GeneralAmerican,
+    /// Received Pronunciation (British English) with back-vowel and non-rhotic shifts.
+    ReceivedPronunciation,
+    /// International / non-native English with generalized vowel centralization.
+    International,
+}
+
+impl Default for VocalAccent {
+    fn default() -> Self {
+        Self::GeneralAmerican
+    }
+}
+
+/// Prosodic pitch intonation contour governing macro-F0 trajectory over an utterance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum IntonationContour {
+    /// Natural declarative statement: gentle arch peaking mid-utterance, descending cadence.
+    Declarative,
+    /// Interrogative / questioning inflection: pitch elevates progressively toward utterance end.
+    Interrogative,
+    /// Authoritative robotics command: crisp high pitch attack with rapid decisive fall.
+    AuthoritativeCommand,
+    /// Urgent alert: elevated pitch baseline with intensified vibrato tremor.
+    UrgentAlert,
+}
+
+impl Default for IntonationContour {
+    fn default() -> Self {
+        Self::Declarative
+    }
+}
+
+impl IntonationContour {
+    /// Evaluates pitch multiplier given normalized utterance progress `t_norm` in [0, 1] and absolute time `t_sec`.
+    pub fn evaluate(&self, t_norm: f32, t_sec: f32) -> f32 {
+        match self {
+            IntonationContour::Declarative => {
+                1.06 + 0.14 * (PI * t_norm).sin() - 0.16 * t_norm
+            }
+            IntonationContour::Interrogative => {
+                0.95 + 0.35 * t_norm * t_norm
+            }
+            IntonationContour::AuthoritativeCommand => {
+                1.22 - 0.38 * t_norm
+            }
+            IntonationContour::UrgentAlert => {
+                1.20 + 0.08 * (2.0 * PI * 8.5 * t_sec).sin()
+            }
+        }
+    }
 }
 
 impl Phoneme {
@@ -437,6 +495,73 @@ impl Phoneme {
                 Some((start, end))
             }
             _ => None,
+        }
+    }
+
+    /// Return standard acoustic formant frequencies with accent-specific adaptations.
+    pub fn acoustic_targets_with_accent(self, accent: VocalAccent) -> FormantTarget {
+        let mut target = self.acoustic_targets();
+        match accent {
+            VocalAccent::GeneralAmerican => target,
+            VocalAccent::ReceivedPronunciation => {
+                match self {
+                    Phoneme::AA => {
+                        target.f1 *= 0.92;
+                        target.f2 *= 0.95;
+                    }
+                    Phoneme::AE => {
+                        target.f1 *= 0.90;
+                        target.f2 *= 1.05;
+                    }
+                    Phoneme::AO => {
+                        target.f1 *= 0.88;
+                        target.f2 *= 0.90;
+                    }
+                    Phoneme::ER => {
+                        target.f3 *= 1.25;
+                    }
+                    _ => {}
+                }
+                target
+            }
+            VocalAccent::International => {
+                if self.is_vowel() {
+                    target.f1 = target.f1 * 0.85 + 500.0 * 0.15;
+                    target.f2 = target.f2 * 0.85 + 1500.0 * 0.15;
+                }
+                target
+            }
+        }
+    }
+
+    /// Returns initial and terminal formant targets for diphthong glides with accent adaptation.
+    pub fn diphthong_targets_with_accent(
+        self,
+        accent: VocalAccent,
+    ) -> Option<(FormantTarget, FormantTarget)> {
+        let (mut start, mut end) = self.diphthong_targets()?;
+        match accent {
+            VocalAccent::GeneralAmerican => Some((start, end)),
+            VocalAccent::ReceivedPronunciation => {
+                match self {
+                    Phoneme::OW => {
+                        start.f2 = 1350.0;
+                    }
+                    Phoneme::AY => {
+                        start.f1 = 700.0;
+                        start.f2 = 1250.0;
+                    }
+                    _ => {}
+                }
+                Some((start, end))
+            }
+            VocalAccent::International => {
+                start.f1 = start.f1 * 0.90 + 500.0 * 0.10;
+                start.f2 = start.f2 * 0.90 + 1500.0 * 0.10;
+                end.f1 = end.f1 * 0.90 + 500.0 * 0.10;
+                end.f2 = end.f2 * 0.90 + 1500.0 * 0.10;
+                Some((start, end))
+            }
         }
     }
 }
@@ -834,6 +959,8 @@ pub struct KlattSynthesizer {
     vocal_tract_scale: f32,
     breathiness: f32,
     glottal_rd: f32,
+    accent: VocalAccent,
+    intonation_contour: IntonationContour,
 }
 
 impl KlattSynthesizer {
@@ -846,6 +973,8 @@ impl KlattSynthesizer {
             vocal_tract_scale: 1.0,
             breathiness: 0.03,
             glottal_rd: 1.0, // Modal voice
+            accent: VocalAccent::GeneralAmerican,
+            intonation_contour: IntonationContour::Declarative,
         }
     }
 
@@ -872,6 +1001,26 @@ impl KlattSynthesizer {
     /// Set Liljencrants-Fant glottal shape factor Rd (0.3 to 2.7).
     pub fn set_glottal_rd(&mut self, rd: f32) {
         self.glottal_rd = rd.clamp(0.3, 2.7);
+    }
+
+    /// Set regional vocal accent.
+    pub fn set_accent(&mut self, accent: VocalAccent) {
+        self.accent = accent;
+    }
+
+    /// Return active regional vocal accent.
+    pub fn accent(&self) -> VocalAccent {
+        self.accent
+    }
+
+    /// Set macro-prosodic pitch intonation contour.
+    pub fn set_intonation_contour(&mut self, contour: IntonationContour) {
+        self.intonation_contour = contour;
+    }
+
+    /// Return active macro-prosodic pitch intonation contour.
+    pub fn intonation_contour(&self) -> IntonationContour {
+        self.intonation_contour
     }
 
     /// Synthesize continuous raw audio samples from a list of phoneme segments.
@@ -915,8 +1064,8 @@ impl KlattSynthesizer {
         // Populate segment nominal values
         for &(seg, start, end) in &seg_spans {
             let len = end - start;
-            let targets = seg.phoneme.acoustic_targets();
-            let diph = seg.phoneme.diphthong_targets();
+            let targets = seg.phoneme.acoustic_targets_with_accent(self.accent);
+            let diph = seg.phoneme.diphthong_targets_with_accent(self.accent);
 
             for i in 0..len {
                 let idx = start + i;
@@ -1010,8 +1159,7 @@ impl KlattSynthesizer {
             let t_norm = (n as f32) / (total_samples as f32);
 
             // Natural Macro-Prosody Intonation Arc:
-            // Starts slightly above base, arches upward in middle, declines toward end
-            let intonation = 1.06 + 0.14 * (PI * t_norm).sin() - 0.16 * t_norm;
+            let intonation = self.intonation_contour.evaluate(t_norm, t);
             let stress_boost = 1.0 + 0.18 * stress_traj[n];
             let micro_jitter = 1.0 + 0.0035 * (2.0 * PI * 6.1 * t).sin();
             let f0 = self.f0_base * intonation * stress_boost * micro_jitter;
@@ -1103,7 +1251,7 @@ impl KlattSynthesizer {
 }
 
 /// Configuration specifying parameter variations for generating diverse synthetic acoustic training exemplars.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExemplarVariationConfig {
     /// Pitch frequencies in Hz to cycle across (e.g. male, female, youth, adult).
     pub pitch_frequencies: Vec<f32>,
@@ -1115,6 +1263,10 @@ pub struct ExemplarVariationConfig {
     pub glottal_rd_factors: Vec<f32>,
     /// Breathiness aspiration amplitudes (e.g. 0.02 crisp, 0.05 breathy).
     pub breathiness_levels: Vec<f32>,
+    /// Regional vocal accents to cycle across (e.g. General American, British RP, International).
+    pub accents: Vec<VocalAccent>,
+    /// Pitch intonation contours to cycle across (e.g. Declarative, Command, Interrogative).
+    pub contours: Vec<IntonationContour>,
 }
 
 impl Default for ExemplarVariationConfig {
@@ -1125,8 +1277,41 @@ impl Default for ExemplarVariationConfig {
             vocal_tract_scales: vec![0.92, 1.0, 1.10],
             glottal_rd_factors: vec![0.75, 1.0, 1.35],
             breathiness_levels: vec![0.02, 0.05],
+            accents: vec![
+                VocalAccent::GeneralAmerican,
+                VocalAccent::ReceivedPronunciation,
+                VocalAccent::International,
+            ],
+            contours: vec![
+                IntonationContour::Declarative,
+                IntonationContour::AuthoritativeCommand,
+                IntonationContour::Interrogative,
+            ],
         }
     }
+}
+
+/// Metadata record for an instantiated synthetic training exemplar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SyntheticExemplarMetadata {
+    /// Synthesized raw audio samples normalized to [-1.0, 1.0].
+    pub audio: Vec<f32>,
+    /// Synthesized text phrase.
+    pub phrase: String,
+    /// Base fundamental pitch in Hz.
+    pub pitch_f0: f32,
+    /// Speaking rate multiplier.
+    pub speaking_rate: f32,
+    /// Vocal tract length scale.
+    pub vocal_tract_scale: f32,
+    /// Liljencrants-Fant glottal shape factor Rd.
+    pub glottal_rd: f32,
+    /// Aspiration breathiness level.
+    pub breathiness: f32,
+    /// Regional vocal accent.
+    pub accent: VocalAccent,
+    /// Prosodic intonation contour.
+    pub contour: IntonationContour,
 }
 
 /// Generator of diverse, realistic acoustic exemplars for zero-shot wake-word enrollment and training datasets.
@@ -1163,8 +1348,12 @@ impl SyntheticExemplarGenerator {
         &mut self.config
     }
 
-    /// Generate `count` diverse synthetic audio exemplars for the given phrase text.
-    pub fn generate_exemplars(&self, phrase: &str, count: usize) -> Vec<Vec<f32>> {
+    /// Generate `count` diverse synthetic audio exemplars with comprehensive acoustic metadata.
+    pub fn generate_exemplars_with_metadata(
+        &self,
+        phrase: &str,
+        count: usize,
+    ) -> Vec<SyntheticExemplarMetadata> {
         if count == 0 {
             return Vec::new();
         }
@@ -1179,6 +1368,8 @@ impl SyntheticExemplarGenerator {
         let n_scale = self.config.vocal_tract_scales.len().max(1);
         let n_rd = self.config.glottal_rd_factors.len().max(1);
         let n_breath = self.config.breathiness_levels.len().max(1);
+        let n_accent = self.config.accents.len().max(1);
+        let n_contour = self.config.contours.len().max(1);
 
         let mut exemplars = Vec::with_capacity(count);
 
@@ -1188,21 +1379,97 @@ impl SyntheticExemplarGenerator {
             let rate = self.config.speaking_rates[(i / n_pitch) % n_speed];
             let scale = self.config.vocal_tract_scales[(i / (n_pitch * n_speed)) % n_scale];
             let rd = self.config.glottal_rd_factors[(i / (n_pitch * n_speed * n_scale)) % n_rd];
-            let breath = self.config.breathiness_levels[(i / (n_pitch * n_speed * n_scale * n_rd)) % n_breath];
+            let breath = self.config.breathiness_levels
+                [(i / (n_pitch * n_speed * n_scale * n_rd)) % n_breath];
+            let accent = self.config.accents
+                [(i / (n_pitch * n_speed * n_scale * n_rd * n_breath)) % n_accent];
+            let contour = self.config.contours
+                [(i / (n_pitch * n_speed * n_scale * n_rd * n_breath * n_accent)) % n_contour];
 
             synth.set_f0(f0);
             synth.set_speaking_rate(rate);
             synth.set_vocal_tract_scale(scale);
             synth.set_glottal_rd(rd);
             synth.set_breathiness(breath);
+            synth.set_accent(accent);
+            synth.set_intonation_contour(contour);
 
             let audio = synth.synthesize(&segments);
             if !audio.is_empty() {
-                exemplars.push(audio);
+                exemplars.push(SyntheticExemplarMetadata {
+                    audio,
+                    phrase: phrase.to_string(),
+                    pitch_f0: f0,
+                    speaking_rate: rate,
+                    vocal_tract_scale: scale,
+                    glottal_rd: rd,
+                    breathiness: breath,
+                    accent,
+                    contour,
+                });
             }
         }
 
         exemplars
     }
+
+    /// Generate `count` diverse synthetic audio exemplars for the given phrase text.
+    pub fn generate_exemplars(&self, phrase: &str, count: usize) -> Vec<Vec<f32>> {
+        self.generate_exemplars_with_metadata(phrase, count)
+            .into_iter()
+            .map(|meta| meta.audio)
+            .collect()
+    }
+}
+
+/// Encodes mono floating-point audio samples into a standard 16-bit 1-channel PCM WAV byte stream.
+pub fn encode_wav_16bit(samples: &[f32], sample_rate: u32) -> Vec<u8> {
+    let num_samples = samples.len() as u32;
+    let bytes_per_sample = 2u16;
+    let num_channels = 1u16;
+    let byte_rate = sample_rate * (num_channels as u32) * (bytes_per_sample as u32);
+    let block_align = num_channels * bytes_per_sample;
+    let subchunk2_size = num_samples * (bytes_per_sample as u32);
+    let chunk_size = 36 + subchunk2_size;
+
+    let mut buf = Vec::with_capacity(44 + subchunk2_size as usize);
+
+    // RIFF header
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&chunk_size.to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+
+    // "fmt " subchunk
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes()); // Subchunk1Size (16 for PCM)
+    buf.extend_from_slice(&1u16.to_le_bytes());  // AudioFormat (1 = PCM)
+    buf.extend_from_slice(&num_channels.to_le_bytes());
+    buf.extend_from_slice(&sample_rate.to_le_bytes());
+    buf.extend_from_slice(&byte_rate.to_le_bytes());
+    buf.extend_from_slice(&block_align.to_le_bytes());
+    buf.extend_from_slice(&16u16.to_le_bytes()); // BitsPerSample
+
+    // "data" subchunk
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&subchunk2_size.to_le_bytes());
+
+    // 16-bit signed PCM audio samples
+    for &s in samples {
+        let clamped = s.clamp(-1.0, 1.0);
+        let sample_i16 = (clamped * 32767.0).round() as i16;
+        buf.extend_from_slice(&sample_i16.to_le_bytes());
+    }
+
+    buf
+}
+
+/// Encodes and writes mono floating-point audio samples to a standard 16-bit PCM WAV file.
+pub fn write_wav_file(
+    path: impl AsRef<Path>,
+    samples: &[f32],
+    sample_rate: u32,
+) -> std::io::Result<()> {
+    let bytes = encode_wav_16bit(samples, sample_rate);
+    std::fs::write(path, bytes)
 }
 

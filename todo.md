@@ -39,22 +39,28 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Multi-Speaker Synthetic Data Augmentation & Automated Calibration - [P1]**
-  - [ ] (1) Multi-accent, vocal tract length perturbation, and emotional prosody variation generator for rich synthetic training corpora.
-  - [ ] (2) On-device confusion matrix evaluation against phonetically similar non-keyword vocabulary (e.g., distinguishing "take off" from "shake off", "lake loft").
-  - [ ] (3) Synthetic exemplar export and dataset generator CLI command for offline model training and validation.
+- [ ] **Adaptive Noise Floor Profiling & Online Dynamic Quantization - [P1]**
+  - [ ] (1) Online background noise clustering for dynamic DTW distance metric adaptation in changing acoustic environments.
+  - [ ] (2) 8-bit quantized streaming DTW matcher for memory-constrained microcontrollers.
+  - [ ] (3) Real-time benchmark evaluating fixed-point memory footprint and detection accuracy under non-stationary multi-rotor interference.
 
 ---
 
 ## Future
 
-- [ ] **Adaptive Noise Floor Profiling & Online Dynamic Quantization - [P2]**
-  - [ ] (1) Online background noise clustering for dynamic DTW distance metric adaptation in changing acoustic environments.
-  - [ ] (2) 8-bit quantized streaming DTW matcher for memory-constrained microcontrollers.
+- [ ] **Multi-Channel Spatial Null-Steering & Dynamic Beamforming for KWS - [P2]**
+  - [ ] (1) Integrated MVDR beamforming steered toward target operator with nulls placed at motor BPF harmonics.
+  - [ ] (2) Co-simulation evaluation under moving multi-rotor platform flight dynamics.
 
 ---
 
 ## Done
+
+- [x] **Multi-Speaker Synthetic Data Augmentation & Automated Calibration - [P1]**
+  - [x] (1) Regional vocal accents (`VocalAccent::GeneralAmerican`, `ReceivedPronunciation`, `International`) and prosodic intonation contours (`IntonationContour::Declarative`, `AuthoritativeCommand`, `Interrogative`, `UrgentAlert`) integrated into `KlattSynthesizer`.
+  - [x] (2) On-device confusion matrix evaluation (`ConfusionMatrix`, `SononEngine::evaluate_keyword_discrimination`) assessing True Positives, False Positives, Precision, Recall, F1 score, and minimal-pair phonetic foil discrimination margins.
+  - [x] (3) Pure safe Rust WAV encoder (`encode_wav_16bit`, `write_wav_file`) and CLI subcommands (`sonon synthesize`, `sonon evaluate`) exporting synthetic corpora with JSON manifests and evaluating on-device classification metrics.
+  - [x] (4) Verified 100% test pass rate across new test suite `tests/sonon_augmentation_and_evaluation_tests.rs` (all 27 test suites passing crate-wide).
 
 - [x] **High-Precision Wake-Word Spotting (KWS) & Streaming VAD Optimization - [P1]**
   - [x] (1) Streaming multi-template Sakoe-Chiba DTW matcher (`match_streaming_window`) with noise-floor-aware threshold scaling (`StreamingDtwConfig`) and refractory lockout debounce logic.

@@ -55,14 +55,14 @@ pub use cwt::{
 };
 pub use doppler::{speed_of_sound_at_temp, DopplerCompensator, DopplerConfig};
 pub use dtw::{
-    calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded, DtwMatcher,
-    PhraseTemplate, StreamingDtwConfig, StreamingMatchResult,
+    calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded, ConfusionMatrix,
+    DtwMatcher, PhraseTemplate, StreamingDtwConfig, StreamingMatchResult,
 };
 pub use echolocation::{
     AcousticObstacle, AcousticPointCloud, CaCfarConfig, ChirpConfig, LfmChirpGenerator,
     MultiMicAcousticEcholocator, SubterraneanCaveSimulator,
 };
-pub use engine::{FeatureMode, KeywordEvent, SononEngine};
+pub use engine::{EvaluationReport, FeatureMode, KeywordEvent, SononEngine};
 pub use fixed::{FixedDtwMatcher, StaticAudioBuffer, Q15, Q31};
 pub use health::{
     AcousticHealthMonitor, AirframeHealthSnapshot, AnomalySeverity, MavlinkNamedValueFloat,
@@ -78,8 +78,9 @@ pub use ormia::{
 };
 pub use pcen::{PcenConfig, PcenFilter};
 pub use phonetic::{
-    ExemplarVariationConfig, FormantTarget, G2pEngine, KlattSynthesizer, LiljencrantsFantPulse,
-    Phoneme, PhonemeSegment, SyntheticExemplarGenerator,
+    encode_wav_16bit, write_wav_file, ExemplarVariationConfig, FormantTarget, G2pEngine,
+    IntonationContour, KlattSynthesizer, LiljencrantsFantPulse, Phoneme, PhonemeSegment,
+    SyntheticExemplarGenerator, SyntheticExemplarMetadata, VocalAccent,
 };
 pub use psychoacoustic::{
     atmospheric_absorption_db_km, bark_to_freq, freq_to_bark, threshold_in_quiet_db,
