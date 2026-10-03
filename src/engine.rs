@@ -30,6 +30,7 @@ use crate::stft::FftProcessor;
 use crate::subbyte::{SubByteBitWidth, SubByteDtwMatcher, SubBytePhraseTemplate};
 use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer};
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
+use crate::ctc_beam_search::{CommandRecognitionResult, CtcCommandDecoder, CtcDecoderConfig};
 use crate::spiking_vad::{SpikingNeuralVad, SpikingVadConfig, SpikingVadTelemetry};
 use crate::vad::EnergyVad;
 use crate::voiceprint::{OperatorVerifier, SpeakerVoiceprint, VerificationDecision};
@@ -132,6 +133,8 @@ pub struct SononEngine {
     operator_verifier: Option<OperatorVerifier>,
     latest_verification_decision: Option<VerificationDecision>,
     rolling_audio_cache: AudioRingBuffer,
+    ctc_decoder: Option<CtcCommandDecoder>,
+    latest_recognized_command: Option<CommandRecognitionResult>,
 }
 
 impl SononEngine {
@@ -217,6 +220,8 @@ impl SononEngine {
             operator_verifier: None,
             latest_verification_decision: None,
             rolling_audio_cache,
+            ctc_decoder: None,
+            latest_recognized_command: None,
         }
     }
 
@@ -1382,6 +1387,66 @@ impl SononEngine {
         }
     }
 
+    /// Enable continuous phonetic CTC beam search command decoder.
+    pub fn enable_ctc_command_decoder(&mut self, config: CtcDecoderConfig) {
+        self.ctc_decoder = Some(CtcCommandDecoder::new(config));
+    }
+
+    /// Disable CTC command decoder.
+    pub fn disable_ctc_command_decoder(&mut self) {
+        self.ctc_decoder = None;
+        self.latest_recognized_command = None;
+    }
+
+    /// Check whether CTC command decoder is enabled.
+    pub fn is_ctc_command_decoder_enabled(&self) -> bool {
+        self.ctc_decoder.is_some()
+    }
+
+    /// Access reference to active CTC command decoder if enabled.
+    pub fn ctc_decoder(&self) -> Option<&CtcCommandDecoder> {
+        self.ctc_decoder.as_ref()
+    }
+
+    /// Access mutable reference to active CTC command decoder if enabled.
+    pub fn ctc_decoder_mut(&mut self) -> Option<&mut CtcCommandDecoder> {
+        self.ctc_decoder.as_mut()
+    }
+
+    /// Access latest recognized multi-word flight command result if available.
+    pub fn latest_recognized_command(&self) -> Option<&CommandRecognitionResult> {
+        self.latest_recognized_command.as_ref()
+    }
+
+    /// Recognize a multi-word flight command from an audio sample buffer using continuous phonetic CTC beam search
+    /// and on-device language model rescoring.
+    pub fn recognize_command_stream(&mut self, audio: &[f32]) -> Option<CommandRecognitionResult> {
+        let start_time = std::time::Instant::now();
+        let feats = self.extract_features(audio);
+        if feats.is_empty() {
+            return None;
+        }
+
+        let decoder = if let Some(ref mut d) = self.ctc_decoder {
+            d
+        } else {
+            self.ctc_decoder = Some(CtcCommandDecoder::new(CtcDecoderConfig::default()));
+            self.ctc_decoder.as_mut().unwrap()
+        };
+
+        decoder.reset();
+
+        for frame in &feats {
+            let is_speech = frame[0] > -80.0;
+            decoder.step_frame(frame, is_speech);
+        }
+
+        let mut res = decoder.finalize()?;
+        res.latency_ms = start_time.elapsed().as_secs_f32() * 1000.0;
+        self.latest_recognized_command = Some(res.clone());
+        Some(res)
+    }
+
     /// Access reference to active streaming DTW configuration.
     pub fn streaming_dtw_config(&self) -> &StreamingDtwConfig {
         &self.streaming_dtw_config
@@ -1633,6 +1698,18 @@ impl SononEngine {
                 self.feature_history.push(mfcc.clone());
                 if self.feature_history.len() > self.max_history_frames {
                     self.feature_history.remove(0);
+                }
+
+                // Step streaming CTC command decoder if enabled
+                if let Some(ref mut decoder) = self.ctc_decoder {
+                    let ctc_speech = is_speech || mfcc[0] > -80.0;
+                    decoder.step_frame(&mfcc, ctc_speech);
+                    if !ctc_speech && decoder.consecutive_silence_frames() >= decoder.config().silence_cutoff_frames {
+                        if let Some(cmd) = decoder.finalize() {
+                            self.latest_recognized_command = Some(cmd);
+                            decoder.reset();
+                        }
+                    }
                 }
 
                 if self.refractory_lockout_remaining > 0 {
