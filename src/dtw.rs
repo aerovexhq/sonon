@@ -271,6 +271,21 @@ impl DtwMatcher {
     pub fn templates(&self) -> &[PhraseTemplate] {
         &self.templates
     }
+
+    /// Access mutable reference to enrolled templates slice.
+    pub fn templates_mut(&mut self) -> &mut [PhraseTemplate] {
+        &mut self.templates
+    }
+
+    /// Update features of an enrolled template by name.
+    pub fn update_template_features(&mut self, name: &str, features: Vec<Vec<f32>>) -> bool {
+        if let Some(t) = self.templates.iter_mut().find(|t| t.name == name) {
+            t.features = features;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Default for DtwMatcher {
@@ -634,6 +649,22 @@ impl AcousticNoiseClusterTracker {
             (gm / am).clamp(0.0, 1.0)
         } else {
             1.0
+        }
+    }
+
+    /// Estimate Signal-to-Noise Ratio (SNR) in dB between a speech frame and tracked background noise.
+    pub fn estimate_snr_db(&self, speech_frame: &[f32]) -> f32 {
+        if speech_frame.is_empty() || self.sample_count == 0 {
+            return 12.0;
+        }
+        let len = speech_frame.len().min(self.mean_noise.len());
+        let speech_energy: f32 = speech_frame[..len].iter().map(|&x| x * x).sum();
+        let noise_energy: f32 = self.mean_noise[..len].iter().map(|&x| x * x).sum();
+
+        if noise_energy > 1e-6 && speech_energy > 1e-6 {
+            (10.0 * (speech_energy / noise_energy).log10()).clamp(-10.0, 45.0)
+        } else {
+            15.0
         }
     }
 

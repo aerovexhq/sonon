@@ -1,3 +1,4 @@
+use crate::adaptation::{ActiveLearningCandidate, AdaptationTelemetry, ContinualAdaptationEngine};
 use crate::aec::{AcousticEchoCanceller, AecConfig};
 use crate::aeroacoustics::{
     AeroacousticConfig, AeroacousticInverter, AeroacousticTelemetry, DirectivitySphere3D,
@@ -98,6 +99,8 @@ pub struct SononEngine {
     refractory_lockout_remaining: usize,
     feature_ring_buffer: FeatureRingBuffer,
     noise_tracker: AcousticNoiseClusterTracker,
+    continual_adaptation: Option<ContinualAdaptationEngine>,
+    latest_adaptation_telemetry: Option<AdaptationTelemetry>,
 }
 
 impl SononEngine {
@@ -172,6 +175,8 @@ impl SononEngine {
             refractory_lockout_remaining: 0,
             feature_ring_buffer: FeatureRingBuffer::new(128, num_mfcc),
             noise_tracker: AcousticNoiseClusterTracker::new(num_mfcc, 0.05),
+            continual_adaptation: None,
+            latest_adaptation_telemetry: None,
         }
     }
 
@@ -1068,7 +1073,7 @@ impl SononEngine {
             name_str,
             reference_template,
             report.calibrated_threshold,
-            12,
+            8,
         );
 
         Ok(report)
@@ -1104,6 +1109,81 @@ impl SononEngine {
     /// Access reference to internal zero-heap feature ring buffer.
     pub fn feature_ring_buffer(&self) -> &FeatureRingBuffer {
         &self.feature_ring_buffer
+    }
+
+    /// Enable continual domain adaptation for an enrolled keyword.
+    pub fn enable_continual_adaptation(
+        &mut self,
+        keyword: &str,
+        memory_capacity: usize,
+    ) -> Result<(), String> {
+        let template = self
+            .dtw
+            .templates()
+            .iter()
+            .find(|t| t.name == keyword)
+            .ok_or_else(|| format!("Keyword '{}' not found in enrolled templates", keyword))?;
+
+        let engine = ContinualAdaptationEngine::new(
+            keyword,
+            template.features.clone(),
+            template.threshold,
+            memory_capacity,
+            template.band_radius,
+        );
+        self.continual_adaptation = Some(engine);
+        Ok(())
+    }
+
+    /// Disable continual domain adaptation.
+    pub fn disable_continual_adaptation(&mut self) {
+        self.continual_adaptation = None;
+        self.latest_adaptation_telemetry = None;
+    }
+
+    /// Access reference to active continual adaptation engine if enabled.
+    pub fn continual_adaptation(&self) -> Option<&ContinualAdaptationEngine> {
+        self.continual_adaptation.as_ref()
+    }
+
+    /// Access mutable reference to active continual adaptation engine if enabled.
+    pub fn continual_adaptation_mut(&mut self) -> Option<&mut ContinualAdaptationEngine> {
+        self.continual_adaptation.as_mut()
+    }
+
+    /// Access latest evaluated adaptation telemetry report.
+    pub fn latest_adaptation_telemetry(&self) -> Option<AdaptationTelemetry> {
+        self.continual_adaptation.as_ref().map(|a| a.telemetry())
+    }
+
+    /// Process an observed speech segment through continual adaptation and sync template in DTW matcher.
+    pub fn adapt_keyword_observation(
+        &mut self,
+        features: &[Vec<f32>],
+        match_dist: f32,
+        snr_db: f32,
+        timestamp_sec: f32,
+        raw_audio: &[f32],
+    ) -> Result<Option<ActiveLearningCandidate>, String> {
+        if let Some(ref mut engine) = self.continual_adaptation {
+            let candidate = engine.process_observation(
+                features,
+                match_dist,
+                snr_db,
+                timestamp_sec,
+                raw_audio,
+            )?;
+
+            // Sync updated canonical centroid back into DTW template
+            let updated_centroid = engine.canonical_centroid().to_vec();
+            let kw_name = engine.telemetry().keyword;
+            self.dtw.update_template_features(&kw_name, updated_centroid);
+
+            self.latest_adaptation_telemetry = Some(engine.telemetry());
+            Ok(candidate)
+        } else {
+            Ok(None)
+        }
     }
 
     /// Ingest streaming microphone samples alongside far-end loudspeaker reference samples.
@@ -1240,7 +1320,7 @@ impl SononEngine {
                 }
 
                 self.feature_ring_buffer.push_frame(&mfcc);
-                self.feature_history.push(mfcc);
+                self.feature_history.push(mfcc.clone());
                 if self.feature_history.len() > self.max_history_frames {
                     self.feature_history.remove(0);
                 }
@@ -1260,10 +1340,30 @@ impl SononEngine {
                         let timestamp_sec =
                             (self.total_samples_processed as f64) / (self.sample_rate as f64);
                         events.push(KeywordEvent {
-                            keyword: res.keyword,
+                            keyword: res.keyword.clone(),
                             confidence: res.confidence,
                             timestamp_sec,
                         });
+
+                        // Hook continual domain adaptation if active for this keyword
+                        if let Some(ref mut adapt) = self.continual_adaptation {
+                            if adapt.telemetry().keyword == res.keyword {
+                                let start_idx = self.feature_history.len().saturating_sub(res.matched_frames);
+                                let matched_slice = &self.feature_history[start_idx..];
+                                let snr_db = self.noise_tracker.estimate_snr_db(&mfcc).max(12.0);
+                                let _ = adapt.process_observation(
+                                    matched_slice,
+                                    res.distance,
+                                    snr_db,
+                                    timestamp_sec as f32,
+                                    &[],
+                                );
+                                let updated = adapt.canonical_centroid().to_vec();
+                                self.dtw.update_template_features(&res.keyword, updated);
+                                self.latest_adaptation_telemetry = Some(adapt.telemetry());
+                            }
+                        }
+
                         self.refractory_lockout_remaining = self.streaming_dtw_config.refractory_frames;
                         self.feature_history.clear();
                         self.feature_ring_buffer.clear();
@@ -1434,6 +1534,7 @@ impl SononEngine {
         self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.noise_tracker.reset();
+        self.latest_adaptation_telemetry = None;
         self.last_sample = 0.0;
         self.total_samples_processed = 0;
     }
