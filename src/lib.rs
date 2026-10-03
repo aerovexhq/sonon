@@ -8,6 +8,7 @@
 #![deny(unsafe_code)]
 
 pub mod aec;
+pub mod aeroacoustics;
 pub mod aerossm;
 pub mod anticipatory;
 pub mod beamforming;
@@ -38,6 +39,10 @@ pub mod wind;
 pub mod window;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
+pub use aeroacoustics::{
+    a_weighting_db, bessel_j, AeroacousticConfig, AeroacousticInverter, AeroacousticTelemetry,
+    DirectivitySphere3D, GroundNoiseFootprint, RotorGeometry,
+};
 pub use aerossm::{AeroSsmCell, SincConvFrontend};
 pub use anticipatory::{AnticipatoryPrefixDecoder, InterlockState, WaldSprtConfig};
 pub use beamforming::{
