@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "public/**"
-      - "CNAME"
-      - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -20,29 +16,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install documentation dependencies
+        working-directory: docs
+        run: npm ci
+
+      - name: Build VitePress documentation
+        working-directory: docs
+        run: npm run docs:build
+
+      - name: Prepare static assets and deployment metadata
+        run: |
+          mkdir -p docs/.vitepress/dist
+          echo "sonon.aerovex.net" > docs/.vitepress/dist/CNAME
+          touch docs/.vitepress/dist/.nojekyll
+          if [ -f public/sonon.wasm ] && [ ! -f docs/.vitepress/dist/sonon.wasm ]; then
+            cp public/sonon.wasm docs/.vitepress/dist/sonon.wasm
+          fi
+          if [ -f public/index.html ]; then
+            cp public/index.html docs/.vitepress/dist/lab.html
+          fi
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Prepare Static Artifact
-        run: |
-          mkdir -p public
-          echo "sonon.aerovex.net" > public/CNAME
-          touch public/.nojekyll
-
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: docs/.vitepress/dist
 
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

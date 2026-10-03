@@ -30,58 +30,28 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 28: Self-Supervised Acoustic Contrastive Learning for Zero-Shot UAV Motor Bearing Prognostics - [P2]**
-  - [ ] (1) Time-frequency contrastive encoder extracting invariant structural health embeddings under arbitrary RPM and payload variations.
-  - [ ] (2) Remaining Useful Life (RUL) Weibull hazard estimation running fully on-device.
-  - [ ] (3) Predictive maintenance alerts prior to mechanical seizure during autonomous long-endurance missions.
+- [ ] **High-Precision Wake-Word Spotting (KWS) & Streaming VAD Optimization - [P1]**
+  - [ ] (1) Streaming multi-template Sakoe-Chiba DTW matcher with adaptive confidence thresholding under non-stationary drone rotor and propwash noise.
+  - [ ] (2) Bounded-memory ring-buffer acoustic feature cache for continuous sub-millisecond keyword spotting latency on microcontrollers.
+  - [ ] (3) Evaluation harness measuring False Rejection Rate (FRR) and False Alarm Rate (FAR) under calibrated robotics noise floors.
+
+- [ ] **Realistic Formant & Glottal Speech Synthesis for Instant Synthetic Exemplar Generation - [P1]**
+  - [ ] (1) Liljencrants-Fant (LF) parametric glottal flow waveform generator integrated into Klatt cascade-parallel formant filter bank.
+  - [ ] (2) Automated synthetic speech pipeline: instantaneous generation of multi-pitch, multi-rate, and phonetic-variant audio exemplars from phonetic strings for zero-shot wake-word enrollment.
+  - [ ] (3) On-device acoustic calibration benchmark: synthetic exemplar vs. live voice enrollment cross-validation suite.
 
 ---
 
 ## Future
 
-- [ ] **Phase 18 (Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
-  - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
-  - [ ] (2) Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
+- [ ] **Edge Neuromorphic & Hardware Acceleration for Continuous Voice Listening - [P2]**
+  - [ ] (1) Hardware-in-the-loop streaming driver binding acoustic spike events directly to sub-milliwatt edge neural silicon.
+  - [ ] (2) Verification of continuous sub-100 microwatt listening on bare-metal Cortex-M and RISC-V targets.
 
-- [ ] **Phase 29: Aeroacoustic Blade Tip Transonic Shock Wave Detection & Retreat Stall Prediction - [P2]**
-  - [ ] (1) Detection of localized blade vortex interaction (BVI) micro-shocks when advancing tip Mach number $M_{\text{tip}} > 0.75$.
-  - [ ] (2) Prediction of aerodynamic thrust collapse and retreating blade stall flutter prior to flight attitude divergence.
-  - [ ] (3) High-g maneuvering acoustic validation suite.
-
-- [ ] **Phase 30: In-Flight Ground Impedance & Terrain Acoustic Altimetry (Surface Roughness & Soil Sensing) - [P2]**
-  - [ ] (1) Ground acoustic reflection impedance transfer function estimation separating hard rock/asphalt, loose soil, and water surfaces.
-  - [ ] (2) Acoustic height-above-ground-level (AGL) altimetry providing redundant altitude telemetry in degraded visual environments (DVE, dust/fog).
-  - [ ] (3) Terrain acoustic classification unit tests.
-
-- [ ] **Phase 31: Multi-Channel Acoustic Crypto-Steganographic Watermarking & Anti-Spoofing Voice Authentication - [P3]**
-  - [ ] (1) Inaudible psychoacoustically masked cryptographic watermark injection in operator voice command streams.
-  - [ ] (2) On-device cryptographic verification rejecting deepfake replay and adversarial acoustic injection attacks.
-  - [ ] (3) Spoofing rejection unit tests with perturbed synthetic voices.
-
-- [ ] **Phase 32: Ultrasonic Acoustic Anemometry & In-Situ 3D Wind Vector Reconstruction - [P2]**
-  - [ ] (1) Reciprocal ultrasonic time-of-flight (ToF) difference solver across orthogonal transducer pairs.
-  - [ ] (2) Rotor wash compensation computing true ambient 3D wind velocity vector and turbulent gust intensity.
-  - [ ] (3) High-speed slipstream validation against aerodynamic ground truth.
-
-- [ ] **Phase 33: Active Rotor Aeroacoustic Noise Cancellation via In-Blade Piezoelectric Phase Actuation - [P3]**
-  - [ ] (1) Real-time rotor shaft optical/Hall sensor phase-locked loop (PLL) tracking precise blade azimuthal angle.
-  - [ ] (2) Anti-phase structural acoustic actuation generating destructive acoustic interference at fundamental Blade Pass Frequencies (BPF).
-  - [ ] (3) Active noise reduction verification achieving $> 12\text{ dB}$ tonal suppression.
-
-- [ ] **Phase 34: Acoustic Micro-Doppler Drone Radar Signature Discrimination & Friendly/Hostile Airframe Classification - [P2]**
-  - [ ] (1) Short-time acoustic Fourier transform (STAFT) blade flash spectral signature extraction discriminating multi-rotor blade counts and motor harmonics.
-  - [ ] (2) Low-complexity Nearest-Neighbor / DTW classifier isolating friendly fleet UAV acoustics from hostile drone acoustic incursions.
-  - [ ] (3) Automated airframe classification unit tests across quadcopter, hexacopter, and fixed-wing acoustic profiles.
-
-- [ ] **Phase 35: In-Situ Non-Intrusive Engine Combustion Acoustics & Turbine Flameout Detection - [P2]**
-  - [ ] (1) High-temperature acoustic exhaust sensor processing tracking thermoacoustic instabilities and Rayleigh criterion combustion oscillations.
-  - [ ] (2) Real-time flameout and compressor surge acoustic detection triggering autonomous emergency autorotation / glide protocols.
-  - [ ] (3) Unit tests simulating gas turbine acoustic pressure variations.
-
-- [ ] **Phase 36: Ultrasonic Boundary Layer Flow Separation Sensing & Aerodynamic Stall Acoustic Telemetry - [P2]**
-  - [ ] (1) Flush-mounted ultrasonic surface acoustic wave (SAW) sensors detecting boundary layer turbulence transition and laminar separation bubbles (LSB).
-  - [ ] (2) Real-time stall warning emission with critical angle-of-attack margin estimation prior to loss-of-control.
-  - [ ] (3) Flight wing stall aeroacoustic telemetry tests.
+- [ ] **Multi-Channel Acoustic Spatial Isolation & Voice Anti-Spoofing - [P2]**
+  - [ ] (1) MVDR spatial beamforming steering nulls toward motor hubs while locking onto speaker voice direction.
+  - [ ] (2) On-device acoustic replay and synthetic voice spoofing rejection verifying physical vocal tract phase signatures.
+  - [ ] (3) Robust voice command grammar parsing for mission-critical robotic flight instructions.
 
 ---
 
