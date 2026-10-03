@@ -27,6 +27,7 @@ use crate::stft::FftProcessor;
 use crate::subbyte::{SubByteBitWidth, SubByteDtwMatcher, SubBytePhraseTemplate};
 use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer};
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
+use crate::spiking_vad::{SpikingNeuralVad, SpikingVadConfig, SpikingVadTelemetry};
 use crate::vad::EnergyVad;
 use crate::wind::{TurbulentBoundaryLayerSuppressor, WindNoiseTelemetry, WindTurbulenceConfig};
 use crate::window::{Window, WindowType};
@@ -102,6 +103,9 @@ pub struct SononEngine {
     noise_tracker: AcousticNoiseClusterTracker,
     continual_adaptation: Option<ContinualAdaptationEngine>,
     latest_adaptation_telemetry: Option<AdaptationTelemetry>,
+    spiking_vad: Option<SpikingNeuralVad>,
+    spiking_vad_gating: bool,
+    latest_spiking_vad_telemetry: Option<SpikingVadTelemetry>,
 }
 
 impl SononEngine {
@@ -178,6 +182,9 @@ impl SononEngine {
             noise_tracker: AcousticNoiseClusterTracker::new(num_mfcc, 0.05),
             continual_adaptation: None,
             latest_adaptation_telemetry: None,
+            spiking_vad: None,
+            spiking_vad_gating: true,
+            latest_spiking_vad_telemetry: None,
         }
     }
 
@@ -854,6 +861,42 @@ impl SononEngine {
         &mut self.vad
     }
 
+    /// Enable Hardware-Accelerated Streaming Spiking Neural VAD with Neuromorphic Latency.
+    pub fn enable_spiking_vad(&mut self, config: SpikingVadConfig) {
+        self.spiking_vad = Some(SpikingNeuralVad::new(config));
+    }
+
+    /// Disable Spiking Neural VAD.
+    pub fn disable_spiking_vad(&mut self) {
+        self.spiking_vad = None;
+        self.latest_spiking_vad_telemetry = None;
+    }
+
+    /// Access reference to active Spiking Neural VAD if enabled.
+    pub fn spiking_vad(&self) -> Option<&SpikingNeuralVad> {
+        self.spiking_vad.as_ref()
+    }
+
+    /// Access mutable reference to active Spiking Neural VAD if enabled.
+    pub fn spiking_vad_mut(&mut self) -> Option<&mut SpikingNeuralVad> {
+        self.spiking_vad.as_mut()
+    }
+
+    /// Return latest evaluated Spiking Neural VAD telemetry snapshot.
+    pub fn latest_spiking_vad_telemetry(&self) -> Option<&SpikingVadTelemetry> {
+        self.latest_spiking_vad_telemetry.as_ref()
+    }
+
+    /// Configure whether Spiking Neural VAD gates DTW matching during quiescent periods.
+    pub fn set_spiking_vad_gating(&mut self, enabled: bool) {
+        self.spiking_vad_gating = enabled;
+    }
+
+    /// Check if Spiking Neural VAD gating is enabled.
+    pub fn is_spiking_vad_gating_enabled(&self) -> bool {
+        self.spiking_vad_gating
+    }
+
     /// Set feature normalization mode (LogMel or Pcen).
     pub fn set_feature_mode(&mut self, mode: FeatureMode) {
         self.feature_mode = mode;
@@ -1280,6 +1323,17 @@ impl SononEngine {
         let chunk_size = (self.ring_buffer.capacity() - self.frame_size).max(self.hop_size);
 
         for chunk in input_slice.chunks(chunk_size) {
+            // Process chunk through Spiking Neural VAD if enabled
+            let is_spiking_active = if let Some(ref mut svad) = self.spiking_vad {
+                svad.process_buffer(chunk);
+                let telem = svad.telemetry();
+                let active = telem.is_speech_active;
+                self.latest_spiking_vad_telemetry = Some(telem);
+                active
+            } else {
+                true
+            };
+
             self.ring_buffer.push_slice(chunk);
             self.total_samples_processed += chunk.len() as u64;
 
@@ -1312,7 +1366,12 @@ impl SononEngine {
                 }
 
                 // Voice activity detection
-                let is_speech = self.vad.process_frame(&preemp);
+                let is_energy_speech = self.vad.process_frame(&preemp);
+                let is_speech = if self.spiking_vad.is_some() && self.spiking_vad_gating {
+                    is_spiking_active
+                } else {
+                    is_energy_speech
+                };
 
                 // Apply windowing function
                 self.window.apply(&mut preemp);
@@ -1366,7 +1425,7 @@ impl SononEngine {
 
                 if self.refractory_lockout_remaining > 0 {
                     self.refractory_lockout_remaining -= 1;
-                } else {
+                } else if !self.spiking_vad_gating || self.spiking_vad.is_none() || is_spiking_active {
                     let noise_floor = self.vad.noise_floor();
                     let mut matched = false;
 
@@ -1560,6 +1619,10 @@ impl SononEngine {
         if let Some(ref mut echo) = self.echolocator {
             echo.reset();
         }
+        if let Some(ref mut svad) = self.spiking_vad {
+            svad.reset();
+        }
+        self.latest_spiking_vad_telemetry = None;
         self.latest_cwt_report = None;
         self.latest_ormia_telemetry = None;
         self.latest_stealth_report = None;

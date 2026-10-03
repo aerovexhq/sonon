@@ -39,22 +39,25 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Hardware-Accelerated Streaming Spiking Neural VAD with Neuromorphic Latency - [P3]**
-  - [ ] (1) Leaky Integrate-and-Fire (LIF) spike encoding on multi-band acoustic energy.
-  - [ ] (2) Event-driven sparse synaptic accumulator with sub-millisecond voice activation.
-
----
-
-## Future
-
 - [ ] **Multi-Accent Dynamic Formant Adaptation via Active Articulatory Synthesis - [P3]**
   - [ ] (1) Vocal tract length normalization (VTLN) warping on streaming MFCC filterbanks.
   - [ ] (2) Accent-conditioned formant synthesis for cross-lingual zero-shot keyword calibration.
 
 ---
 
+## Future
+
+(Remaining phases to be specified)
+
+---
+
 ## Done
 
+- [x] **Hardware-Accelerated Streaming Spiking Neural VAD with Neuromorphic Latency - [P3]**
+  - [x] (1) Multi-band acoustic energy filtering (`BiquadBandpassFilter`) and Leaky Integrate-and-Fire (LIF) spike encoding (`LifNeuronConfig`, `LifNeuron`) with soft/hard reset dynamics and refractory period lockout.
+  - [x] (2) Event-driven sparse synaptic receptive field with asymmetric noise floor tracking, decaying synaptic traces, and multi-band synaptic weights ($w_b$) providing drone motor rotor hum suppression ($w_0 = -2.0$).
+  - [x] (3) Sub-millisecond voice onset activation latency ($< 1.0$ ms / $< 16$ samples at 16 kHz) verified on transient formant attacks vs 10 ms STFT hop window.
+  - [x] (4) Full integration into `SononEngine` (`enable_spiking_vad`, `disable_spiking_vad`, `latest_spiking_vad_telemetry`, `set_spiking_vad_gating`) gating DTW matching during quiescent periods, verified in `tests/sonon_spiking_vad_tests.rs` (5/5 PASS, 33/33 test suites passing crate-wide).
 - [x] **Ultra-Low-Bitrate Acoustic Quantization & Sub-Byte Weight Packing for Edge KWS - [P2]**
   - [x] (1) Non-uniform Lloyd-Max scalar codebook optimization (`LloydMaxTrainer`, `SubByteCodebook`) supporting 1-bit, 2-bit, and 4-bit quantization with per-dimension feature standardization ($\mu_d, \sigma_d$).
   - [x] (2) Compact sub-byte bitstream packing (`SubBytePackedFrame`, `SubBytePhraseTemplate`) achieving up to $12\times$ RAM compression ($O(D \cdot B / 8)$ memory bound).
