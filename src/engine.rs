@@ -3,6 +3,7 @@ use crate::beamforming::ArrayGeometry;
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::DtwMatcher;
+use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
 use crate::notch::RotorHarmonicNotchBank;
@@ -74,6 +75,8 @@ pub struct SononEngine {
     latest_pulp_telemetry: Option<PulpTelemetry>,
     wind_suppressor: Option<TurbulentBoundaryLayerSuppressor>,
     latest_wind_telemetry: Option<WindNoiseTelemetry>,
+    echolocator: Option<MultiMicAcousticEcholocator>,
+    latest_point_cloud: Option<AcousticPointCloud>,
     current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
 }
@@ -136,6 +139,8 @@ impl SononEngine {
             latest_pulp_telemetry: None,
             wind_suppressor: None,
             latest_wind_telemetry: None,
+            echolocator: None,
+            latest_point_cloud: None,
             current_motor_rpms: Vec::new(),
             num_mel_filters,
         }
@@ -587,6 +592,60 @@ impl SononEngine {
         Ok(events)
     }
 
+    /// Enable active acoustic echolocation and 3D obstacle point cloud mapping.
+    pub fn enable_acoustic_echolocation(
+        &mut self,
+        geometry: ArrayGeometry,
+        chirp_config: ChirpConfig,
+        cfar_config: CaCfarConfig,
+    ) {
+        self.echolocator = Some(MultiMicAcousticEcholocator::new(
+            geometry,
+            chirp_config,
+            cfar_config,
+        ));
+    }
+
+    /// Disable acoustic echolocation.
+    pub fn disable_acoustic_echolocation(&mut self) {
+        self.echolocator = None;
+        self.latest_point_cloud = None;
+    }
+
+    /// Access reference to active acoustic echolocator if enabled.
+    pub fn echolocator(&self) -> Option<&MultiMicAcousticEcholocator> {
+        self.echolocator.as_ref()
+    }
+
+    /// Access mutable reference to active acoustic echolocator if enabled.
+    pub fn echolocator_mut(&mut self) -> Option<&mut MultiMicAcousticEcholocator> {
+        self.echolocator.as_mut()
+    }
+
+    /// Return latest evaluated 3D acoustic obstacle point cloud.
+    pub fn latest_point_cloud(&self) -> Option<&AcousticPointCloud> {
+        self.latest_point_cloud.as_ref()
+    }
+
+    /// Process multi-channel audio recordings through the acoustic echolocator,
+    /// executing matched filter pulse compression, CA-CFAR detection, and 3D point cloud triangulation.
+    pub fn process_multi_channel_echolocation(
+        &mut self,
+        multi_channel_inputs: &[&[f32]],
+        tx_reference: Option<&[f32]>,
+    ) -> Result<AcousticPointCloud, String> {
+        let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+        let cloud = {
+            let echolocator = self
+                .echolocator
+                .as_mut()
+                .ok_or_else(|| "Acoustic echolocator is not enabled".to_string())?;
+            echolocator.process_ping(multi_channel_inputs, tx_reference, timestamp_sec)
+        };
+        self.latest_point_cloud = Some(cloud.clone());
+        Ok(cloud)
+    }
+
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
     pub fn doppler_scale_factor(&self) -> f32 {
         self.doppler.as_ref().map_or(1.0, |d| d.doppler_factor())
@@ -1005,11 +1064,15 @@ impl SononEngine {
         if let Some(ref mut wind) = self.wind_suppressor {
             wind.reset();
         }
+        if let Some(ref mut echo) = self.echolocator {
+            echo.reset();
+        }
         self.latest_cwt_report = None;
         self.latest_ormia_telemetry = None;
         self.latest_stealth_report = None;
         self.latest_pulp_telemetry = None;
         self.latest_wind_telemetry = None;
+        self.latest_point_cloud = None;
         self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.last_sample = 0.0;

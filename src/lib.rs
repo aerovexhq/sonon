@@ -15,6 +15,7 @@ pub mod capi;
 pub mod cwt;
 pub mod doppler;
 pub mod dtw;
+pub mod echolocation;
 pub mod engine;
 pub mod fixed;
 pub mod health;
@@ -50,6 +51,10 @@ pub use doppler::{speed_of_sound_at_temp, DopplerCompensator, DopplerConfig};
 pub use dtw::{
     calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded, DtwMatcher,
     PhraseTemplate,
+};
+pub use echolocation::{
+    AcousticObstacle, AcousticPointCloud, CaCfarConfig, ChirpConfig, LfmChirpGenerator,
+    MultiMicAcousticEcholocator, SubterraneanCaveSimulator,
 };
 pub use engine::{FeatureMode, KeywordEvent, SononEngine};
 pub use fixed::{FixedDtwMatcher, StaticAudioBuffer, Q15, Q31};
