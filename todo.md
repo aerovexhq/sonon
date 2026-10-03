@@ -39,22 +39,27 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Ultra-Low-Bitrate Acoustic Quantization & Sub-Byte Weight Packing for Edge KWS - [P2]**
-  - [ ] (1) 2-bit / 4-bit non-uniform Lloyd-Max scalar quantization for template dictionaries.
-  - [ ] (2) Bit-packed SIMD Hamming distance kernel acceleration on microcontrollers.
-
----
-
-## Future
-
 - [ ] **Hardware-Accelerated Streaming Spiking Neural VAD with Neuromorphic Latency - [P3]**
   - [ ] (1) Leaky Integrate-and-Fire (LIF) spike encoding on multi-band acoustic energy.
   - [ ] (2) Event-driven sparse synaptic accumulator with sub-millisecond voice activation.
 
 ---
 
+## Future
+
+- [ ] **Multi-Accent Dynamic Formant Adaptation via Active Articulatory Synthesis - [P3]**
+  - [ ] (1) Vocal tract length normalization (VTLN) warping on streaming MFCC filterbanks.
+  - [ ] (2) Accent-conditioned formant synthesis for cross-lingual zero-shot keyword calibration.
+
+---
+
 ## Done
 
+- [x] **Ultra-Low-Bitrate Acoustic Quantization & Sub-Byte Weight Packing for Edge KWS - [P2]**
+  - [x] (1) Non-uniform Lloyd-Max scalar codebook optimization (`LloydMaxTrainer`, `SubByteCodebook`) supporting 1-bit, 2-bit, and 4-bit quantization with per-dimension feature standardization ($\mu_d, \sigma_d$).
+  - [x] (2) Compact sub-byte bitstream packing (`SubBytePackedFrame`, `SubBytePhraseTemplate`) achieving up to $12\times$ RAM compression ($O(D \cdot B / 8)$ memory bound).
+  - [x] (3) Asymmetric Distance Computation (ADC) accelerator (`SubByteDtwMatcher`, `build_adc_lut`, `frame_distance_adc`) with precomputed query-to-codebook lookup tables and zero floating-point multiplications in inner DTW loops.
+  - [x] (4) End-to-end integration into `SononEngine` (`export_subbyte_template`, `create_subbyte_matcher`) verified across `tests/sonon_subbyte_quantization_tests.rs` (5/5 PASS, 32/32 test suites passing crate-wide).
 - [x] **Continual Few-Shot Domain Adaptation & Acoustic Active Learning - [P2]**
   - [x] (1) Streaming exemplar memory consolidation (`ExemplarMemoryBuffer`, `AcousticExemplar`) with Fisher information sensitivity weighting ($\mathcal{I}(\mathbf{X})$) and acoustic diversity pruning, preserving enrollment anchor stability.
   - [x] (2) Online Dynamic Time Warping Barycenter Averaging (`OnlineDbaUpdater`) with exponential moving average centroid adaptation and bounded drift sphere projection ($d(\mathbf{C}, \mathbf{A}) \le r_{\max}$).
