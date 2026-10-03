@@ -40,6 +40,7 @@ pub mod wind;
 pub mod window;
 pub mod zero_shot;
 pub mod adaptation;
+pub mod subbyte;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -122,5 +123,9 @@ pub use adaptation::{
     AcousticExemplar, ActiveLearningCandidate, ActiveLearningConfig, ActiveLearningTrigger,
     AdaptationTelemetry, ContinualAdaptationEngine, ExemplarMemoryBuffer,
     FisherInformationEvaluator, OnlineDbaUpdater,
+};
+pub use subbyte::{
+    LloydMaxTrainer, SubByteBitWidth, SubByteCodebook, SubByteDtwMatcher,
+    SubBytePackedFrame, SubBytePhraseTemplate,
 };
 

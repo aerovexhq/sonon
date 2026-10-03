@@ -24,6 +24,7 @@ use crate::riscv_pulp::{PulpConfig, PulpPowerModel, PulpTelemetry};
 use crate::ring_buffer::{AudioRingBuffer, FeatureRingBuffer};
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
+use crate::subbyte::{SubByteBitWidth, SubByteDtwMatcher, SubBytePhraseTemplate};
 use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer};
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
 use crate::vad::EnergyVad;
@@ -927,6 +928,44 @@ impl SononEngine {
     pub fn export_quantized_templates(&self) -> Vec<QuantizedPhraseTemplate> {
         let q_matcher = self.create_quantized_matcher();
         q_matcher.templates().to_vec()
+    }
+
+    /// Export an enrolled keyword template as a sub-byte packed template (1-bit, 2-bit, or 4-bit).
+    pub fn export_subbyte_template(
+        &self,
+        keyword: &str,
+        bit_width: SubByteBitWidth,
+    ) -> Result<SubBytePhraseTemplate, String> {
+        let template = self
+            .dtw
+            .templates()
+            .iter()
+            .find(|t| t.name == keyword)
+            .ok_or_else(|| format!("Keyword '{}' not enrolled in engine", keyword))?;
+
+        Ok(SubBytePhraseTemplate::from_features(
+            &template.name,
+            &template.features,
+            bit_width,
+            template.threshold,
+            template.band_radius,
+        ))
+    }
+
+    /// Export an ultra-low-bitrate sub-byte DTW phrase matcher initialized with currently enrolled templates.
+    pub fn create_subbyte_matcher(&self, bit_width: SubByteBitWidth) -> SubByteDtwMatcher {
+        let mut matcher = SubByteDtwMatcher::new();
+        for template in self.dtw.templates() {
+            let subbyte_tmpl = SubBytePhraseTemplate::from_features(
+                &template.name,
+                &template.features,
+                bit_width,
+                template.threshold,
+                template.band_radius,
+            );
+            matcher.add_template(subbyte_tmpl);
+        }
+        matcher
     }
 
     /// Enroll a keyword phrase template into the engine using single feature sequence and default band corridor.
