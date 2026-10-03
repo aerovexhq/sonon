@@ -39,22 +39,27 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Continual Few-Shot Domain Adaptation & Acoustic Active Learning - [P2]**
-  - [ ] (1) Streaming exemplar memory consolidation with Fisher information pruning.
-  - [ ] (2) Edge active learning trigger for borderline confidence speech segments.
-
----
-
-## Future
-
 - [ ] **Ultra-Low-Bitrate Acoustic Quantization & Sub-Byte Weight Packing for Edge KWS - [P2]**
   - [ ] (1) 2-bit / 4-bit non-uniform Lloyd-Max scalar quantization for template dictionaries.
   - [ ] (2) Bit-packed SIMD Hamming distance kernel acceleration on microcontrollers.
 
 ---
 
+## Future
+
+- [ ] **Hardware-Accelerated Streaming Spiking Neural VAD with Neuromorphic Latency - [P3]**
+  - [ ] (1) Leaky Integrate-and-Fire (LIF) spike encoding on multi-band acoustic energy.
+  - [ ] (2) Event-driven sparse synaptic accumulator with sub-millisecond voice activation.
+
+---
+
 ## Done
 
+- [x] **Continual Few-Shot Domain Adaptation & Acoustic Active Learning - [P2]**
+  - [x] (1) Streaming exemplar memory consolidation (`ExemplarMemoryBuffer`, `AcousticExemplar`) with Fisher information sensitivity weighting ($\mathcal{I}(\mathbf{X})$) and acoustic diversity pruning, preserving enrollment anchor stability.
+  - [x] (2) Online Dynamic Time Warping Barycenter Averaging (`OnlineDbaUpdater`) with exponential moving average centroid adaptation and bounded drift sphere projection ($d(\mathbf{C}, \mathbf{A}) \le r_{\max}$).
+  - [x] (3) Edge active learning trigger (`ActiveLearningTrigger`, `ActiveLearningCandidate`) evaluating decision threshold uncertainty bands ($[\theta^* - \epsilon, \theta^* + \epsilon]$) with SNR gating for human-in-the-loop verification without cloud streaming.
+  - [x] (4) End-to-end integration into `SononEngine` (`enable_continual_adaptation`, `latest_adaptation_telemetry`, streaming `ingest_samples` hook) and 100% test pass rate across `tests/sonon_adaptation_active_learning_tests.rs` (5/5 PASS, 31/31 test suites passing crate-wide).
 - [x] **Zero-Shot Wake-Word Enrollment via Cross-Attention Phonetic-Acoustic Alignment - [P2]**
   - [x] (1) Universal 38-phoneme articulatory manifold embedding space (`PhoneticEmbeddingSpace`) using Mel-spaced Cauchy formant resonance curves and Phonetic Posteriorgram (PPG) projection with Dirichlet entropy regularized cross-attention monotonic alignment (`CrossAttentionAligner`).
   - [x] (2) Multi-lingual Grapheme-to-Phoneme converter (`MultiLingualG2p`) supporting English, Spanish, French, German, Japanese, and Mandarin with flight control lexicon mapping.

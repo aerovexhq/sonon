@@ -39,6 +39,7 @@ pub mod wasm;
 pub mod wind;
 pub mod window;
 pub mod zero_shot;
+pub mod adaptation;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -117,3 +118,9 @@ pub use zero_shot::{
     PhoneticEmbeddingSpace, PhoneticFoil, PhoneticFoilGenerator, SupportedLanguage,
     ZeroShotCalibrationReport, ZeroShotCalibrator,
 };
+pub use adaptation::{
+    AcousticExemplar, ActiveLearningCandidate, ActiveLearningConfig, ActiveLearningTrigger,
+    AdaptationTelemetry, ContinualAdaptationEngine, ExemplarMemoryBuffer,
+    FisherInformationEvaluator, OnlineDbaUpdater,
+};
+

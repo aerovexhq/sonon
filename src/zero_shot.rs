@@ -1362,10 +1362,10 @@ impl ZeroShotCalibrator {
         }
 
         // 3. Compute reference template via DTW Barycenter Averaging and cross-attention alignment
-        let band_radius = 12;
+        let band_radius = 8;
         let dba_template = crate::dtw::dtw_barycenter_averaging(&target_feature_sets, 5, band_radius);
         let align_res = self.aligner.align(&raw_phonemes, &dba_template)?;
-        let reference_template = align_res.aligned_features;
+        let reference_template = dba_template;
 
         // 4. Compute intra-target DTW distance (maximum distance among positive variations)
         let mut max_intra_dist = 0.0f32;
@@ -1384,18 +1384,22 @@ impl ZeroShotCalibrator {
         let mut foil_dists = Vec::with_capacity(foils.len());
 
         for foil in &foils {
-            let foil_segments: Vec<PhonemeSegment> = foil
-                .phonemes
-                .iter()
-                .map(|&p| {
-                    let targets = p.acoustic_targets_with_accent(accent);
-                    PhonemeSegment {
-                        phoneme: p,
-                        duration_ms: targets.default_duration_ms,
-                        stress: 1,
-                    }
-                })
-                .collect();
+            let g2p_segments = MultiLingualG2p::text_to_phonemes(&foil.foil_text, foil.language);
+            let foil_segments: Vec<PhonemeSegment> = if !g2p_segments.is_empty() {
+                g2p_segments
+            } else {
+                foil.phonemes
+                    .iter()
+                    .map(|&p| {
+                        let targets = p.acoustic_targets_with_accent(accent);
+                        PhonemeSegment {
+                            phoneme: p,
+                            duration_ms: targets.default_duration_ms,
+                            stress: 1,
+                        }
+                    })
+                    .collect()
+            };
 
             let mut synth = KlattSynthesizer::new(sample_rate);
             synth.set_accent(accent);
@@ -1425,9 +1429,9 @@ impl ZeroShotCalibrator {
         // 6. Calculate discrimination margin and calibrated decision threshold
         let discrimination_margin = min_foil_dist - max_intra_dist;
         let calibrated_threshold = if discrimination_margin > 0.0 {
-            max_intra_dist + 0.45 * discrimination_margin
+            (max_intra_dist + 0.04 * discrimination_margin).min(max_intra_dist * 1.05)
         } else {
-            max_intra_dist * 1.25
+            max_intra_dist * 1.02
         };
 
         // 7. Evaluate confusion matrix over positive targets and negative foils
