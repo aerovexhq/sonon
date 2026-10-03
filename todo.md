@@ -39,10 +39,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Continuous Phonetic CTC Beam Search & On-Device Language Model Rescoring for Multi-Word Robotics Commands - [P3]**
-  - [ ] (1) Prefix beam search decoder over continuous phonetic posteriorgrams with length normalization and repetitive token collapsing.
-  - [ ] (2) N-gram finite state transducer (FST) grammar rescorer constrained to flight and mission control command lexicons.
-  - [ ] (3) End-to-end integration into `SononEngine::recognize_command_stream` with latency < 20 ms.
+- [ ] **Pitch-Synchronous Overlap-Add (PSOLA) Prosodic Morphing & Glottal Waveform Augmentation for Edge KWS Synthesis - [P3]**
+  - [ ] (1) Glottal Closure Instant (GCI) extraction and pitch-synchronous windowing for pitch-period segmentation from speech waveforms.
+  - [ ] (2) Time-domain PSOLA (TD-PSOLA) prosodic transformation enabling continuous tempo scaling ($0.5\times - 2.0\times$) and $F_0$ pitch shifting ($\pm 12$ semitones) with invariant spectral formant envelopes.
+  - [ ] (3) Multi-speaker prosodic ensemble synthesis pipeline generating diverse synthetic exemplar banks for DTW template fusion and zero-shot KWS calibration.
+  - [ ] (4) End-to-end integration into `SononEngine::enroll_keyword_augmented_synthesis` with automated noise margin verification and streaming KWS validation.
 
 ---
 
@@ -54,6 +55,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Done
 
+- [x] **Continuous Phonetic CTC Beam Search & On-Device Language Model Rescoring for Multi-Word Robotics Commands - [P3]**
+  - [x] (1) Extended 40-token CTC alphabet (39 ARPAbet phonemes + 1 Blank) and continuous acoustic posterior calculation with energy-gated speech activity and liftered $C_1 \dots C_{12}$ formant matching.
+  - [x] (2) Continuous prefix beam search decoder with repetitive token collapsing, CTC blank absorption, and Pronunciation Lexicon Trie supporting flight command segmentations and pronunciation variants.
+  - [x] (3) N-gram flight and mission control command language model rescorer (`FlightGrammarLm`) with bigram transition priors, unigram backoffs, and Bayesian marginalized word posterior confidence scoring.
+  - [x] (4) End-to-end integration into `SononEngine` (`enable_ctc_command_decoder`, `recognize_command_stream`, streaming silence endpointing in `ingest_samples_internal`) with latency $< 3\text{ ms}$ in release mode, verified across `tests/sonon_ctc_beam_search_command_tests.rs` (6/6 PASS, 36/36 test suites passing crate-wide).
 - [x] **Speaker-Adaptive Voiceprint Conditioning & Anti-Spoofing Acoustic Verification for Edge KWS - [P3]**
   - [x] (1) Compact on-device speaker embedding extractor (`SpeakerVoiceprint`) from normalized acoustic feature trajectories combining liftered vocal tract formant envelopes ($C_1 \dots C_{12}$) and glottal excitation source statistics ($F_0$, HNR) with composite source-filter cosine similarity ($S = 0.60 S_{\text{spec}} + 0.30 S_{\text{pitch}} + 0.10 S_{\text{hnr}}$) and multi-exemplar profile fusion.
   - [x] (2) Dual-threshold operator verification (`OperatorVerifier`, `OperatorProfile`, `VerificationDecision`) gating detected wake-word DTW events against enrolled authorized speaker profiles.

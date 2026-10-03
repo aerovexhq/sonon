@@ -44,6 +44,7 @@ pub mod subbyte;
 pub mod spiking_vad;
 pub mod vtln;
 pub mod voiceprint;
+pub mod ctc_beam_search;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -140,4 +141,10 @@ pub use voiceprint::{
     AntiSpoofConfig, AntiSpoofReport, GlottalAntiSpoofDetector, OperatorProfile,
     OperatorVerifier, SpeakerVoiceprint, VerificationDecision,
 };
+pub use ctc_beam_search::{
+    index_to_phoneme, log_add_exp, phoneme_to_index, CommandRecognitionResult,
+    CtcCommandDecoder, CtcDecoderConfig, CtcHypothesis, CtcPosteriorFrame, CtcToken,
+    FlightGrammarLm, LexiconTrie, ALL_PHONEMES, CTC_BLANK_INDEX, CTC_VOCAB_SIZE, NUM_PHONEMES,
+};
+
 
