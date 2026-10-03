@@ -14,6 +14,7 @@ use crate::dtw::{
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
+use crate::mmse_lsa::{LsaConfig, MmseLsaFilter, MmseLsaTelemetry};
 use crate::notch::RotorHarmonicNotchBank;
 use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
@@ -100,6 +101,8 @@ pub struct SononEngine {
     total_samples_processed: u64,
     aec: Option<AcousticEchoCanceller>,
     subband_aec: Option<SubbandAec>,
+    mmse_lsa: Option<MmseLsaFilter>,
+    latest_mmse_lsa_telemetry: Option<MmseLsaTelemetry>,
     doppler: Option<DopplerCompensator>,
     tse: Option<TargetSoundExtractor>,
     latest_tse_report: Option<TseReport>,
@@ -188,6 +191,8 @@ impl SononEngine {
             total_samples_processed: 0,
             aec: None,
             subband_aec: None,
+            mmse_lsa: None,
+            latest_mmse_lsa_telemetry: None,
             doppler: None,
             tse: None,
             latest_tse_report: None,
@@ -387,6 +392,34 @@ impl SononEngine {
     /// Return latest Subband AEC diagnostic telemetry snapshot if enabled.
     pub fn latest_subband_aec_telemetry(&self) -> Option<SubbandAecTelemetry> {
         self.subband_aec.as_ref().map(|a| a.telemetry())
+    }
+
+    /// Enable Bayesian Minimum Mean-Square Error Log-Spectral Amplitude (MMSE-LSA) speech enhancement
+    /// with non-stationary IMCRA noise PSD tracking.
+    pub fn enable_mmse_lsa_enhancement(&mut self, config: LsaConfig) {
+        let num_bins = self.frame_size / 2 + 1;
+        self.mmse_lsa = Some(MmseLsaFilter::new(num_bins, config));
+    }
+
+    /// Disable Bayesian MMSE-LSA speech enhancement.
+    pub fn disable_mmse_lsa_enhancement(&mut self) {
+        self.mmse_lsa = None;
+        self.latest_mmse_lsa_telemetry = None;
+    }
+
+    /// Access reference to active MMSE-LSA speech enhancement filter if enabled.
+    pub fn mmse_lsa(&self) -> Option<&MmseLsaFilter> {
+        self.mmse_lsa.as_ref()
+    }
+
+    /// Access mutable reference to active MMSE-LSA speech enhancement filter if enabled.
+    pub fn mmse_lsa_mut(&mut self) -> Option<&mut MmseLsaFilter> {
+        self.mmse_lsa.as_mut()
+    }
+
+    /// Return latest evaluated MMSE-LSA speech enhancement telemetry snapshot.
+    pub fn latest_mmse_lsa_telemetry(&self) -> Option<MmseLsaTelemetry> {
+        self.latest_mmse_lsa_telemetry
     }
 
     /// Enable Doppler shift compensation and kinematic velocity frequency warping.
@@ -1752,6 +1785,12 @@ impl SononEngine {
                     ss.process_spectrum(&mut power, is_speech);
                 }
 
+                // Apply Bayesian Log-Spectral Amplitude (MMSE-LSA) speech enhancement and IMCRA noise tracking if enabled
+                if let Some(ref mut lsa) = self.mmse_lsa {
+                    lsa.process_spectrum(&mut power);
+                    self.latest_mmse_lsa_telemetry = Some(lsa.telemetry());
+                }
+
                 let active_mel = if let Some(ref vtln_mel) = self.cached_vtln_mel {
                     vtln_mel
                 } else if let Some(ref d) = self.doppler {
@@ -2022,6 +2061,7 @@ impl SononEngine {
         pcen_clone.reset();
 
         let mut ss_clone = self.spectral_subtraction.clone();
+        let mut lsa_clone = self.mmse_lsa.clone();
 
         while pos + self.frame_size <= final_samples.len() {
             frame.copy_from_slice(&final_samples[pos..pos + self.frame_size]);
@@ -2041,6 +2081,10 @@ impl SononEngine {
 
             if let Some(ref mut ss) = ss_clone {
                 ss.process_spectrum(&mut power, true);
+            }
+
+            if let Some(ref mut lsa) = lsa_clone {
+                lsa.process_spectrum(&mut power);
             }
 
             let active_mel = if let Some(m) = mel_override {
@@ -2083,6 +2127,10 @@ impl SononEngine {
         if let Some(ref mut ss) = self.spectral_subtraction {
             ss.reset();
         }
+        if let Some(ref mut lsa) = self.mmse_lsa {
+            lsa.reset();
+        }
+        self.latest_mmse_lsa_telemetry = None;
         if let Some(ref mut d) = self.doppler {
             d.reset();
         }
