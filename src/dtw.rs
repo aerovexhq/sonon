@@ -16,6 +16,47 @@ pub struct PhraseTemplate {
     pub band_radius: usize,
 }
 
+/// Configuration for streaming continuous Sakoe-Chiba DTW keyword matching.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StreamingDtwConfig {
+    /// Minimum search scale factor relative to template length (e.g. 0.70 allows faster speech).
+    pub min_scale: f32,
+    /// Maximum search scale factor relative to template length (e.g. 1.35 allows slower speech).
+    pub max_scale: f32,
+    /// Search candidate length step (1 for fine resolution, 2 for accelerated step).
+    pub step: usize,
+    /// Noise adaptation scale factor alpha: T_eff = T * (1 + alpha * tanh(beta * noise_floor)).
+    pub noise_adapt_alpha: f32,
+    /// Noise adaptation sensitivity beta.
+    pub noise_adapt_beta: f32,
+    /// Refractory period in frames to suppress duplicate firings for a single utterance.
+    pub refractory_frames: usize,
+}
+
+impl Default for StreamingDtwConfig {
+    fn default() -> Self {
+        Self {
+            min_scale: 0.75,
+            max_scale: 1.30,
+            step: 1,
+            noise_adapt_alpha: 0.25,
+            noise_adapt_beta: 0.15,
+            refractory_frames: 15,
+        }
+    }
+}
+
+/// Result of a streaming keyword spotting match.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StreamingMatchResult {
+    pub keyword: String,
+    pub distance: f32,
+    pub effective_threshold: f32,
+    pub confidence: f32,
+    pub matched_frames: usize,
+    pub template_frames: usize,
+}
+
 /// Dynamic Time Warping matcher with Sakoe-Chiba band pruning and multi-exemplar DBA fusion.
 #[derive(Debug, Clone)]
 pub struct DtwMatcher {
@@ -136,6 +177,69 @@ impl DtwMatcher {
         }
 
         best_match
+    }
+
+    /// Match a streaming chronological feature history against enrolled templates,
+    /// evaluating candidate window lengths ending at the current frame and adapting to background noise floor.
+    pub fn match_streaming_window(
+        &self,
+        history: &[Vec<f32>],
+        noise_floor: f32,
+        config: &StreamingDtwConfig,
+    ) -> Option<StreamingMatchResult> {
+        if history.is_empty() || self.templates.is_empty() {
+            return None;
+        }
+
+        let history_len = history.len();
+        let mut best_result: Option<StreamingMatchResult> = None;
+        let mut best_dist = f32::INFINITY;
+
+        for template in &self.templates {
+            let m = template.features.len();
+            if m == 0 {
+                continue;
+            }
+
+            // Adaptive threshold based on background acoustic noise floor
+            let eff_thresh = template.threshold
+                * (1.0 + config.noise_adapt_alpha * (config.noise_adapt_beta * noise_floor.max(0.0)).tanh());
+
+            let min_len = ((m as f32 * config.min_scale).round() as usize).max(4);
+            let max_len = ((m as f32 * config.max_scale).round() as usize).min(history_len);
+
+            if history_len < min_len {
+                continue;
+            }
+
+            let mut len = min_len;
+            while len <= max_len {
+                let start_idx = history_len - len;
+                let candidate = &history[start_idx..history_len];
+                let dist = Self::compute_distance_banded(
+                    candidate,
+                    &template.features,
+                    template.band_radius,
+                );
+
+                if dist <= eff_thresh && dist < best_dist {
+                    best_dist = dist;
+                    let conf = (1.0 - (dist / eff_thresh)).clamp(0.0, 1.0);
+                    best_result = Some(StreamingMatchResult {
+                        keyword: template.name.clone(),
+                        distance: dist,
+                        effective_threshold: eff_thresh,
+                        confidence: conf,
+                        matched_frames: len,
+                        template_frames: m,
+                    });
+                }
+
+                len += config.step;
+            }
+        }
+
+        best_result
     }
 
     /// Return count of enrolled templates.
@@ -316,5 +420,5 @@ pub fn calibrate_threshold(
 
     let mean_dist = total_dist / (pairs as f32);
     // Add margin factor (e.g. 1.25x to 1.5x) to accommodate ambient variation
-    (mean_dist * margin_factor).max(max_pairwise_dist * 1.15).max(2.0)
+    (mean_dist * margin_factor).max(max_pairwise_dist * 1.25).max(0.40)
 }

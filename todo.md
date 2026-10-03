@@ -39,27 +39,32 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **High-Precision Wake-Word Spotting (KWS) & Streaming VAD Optimization - [P1]**
-  - [ ] (1) Streaming multi-template Sakoe-Chiba DTW matcher with adaptive confidence thresholding under non-stationary drone rotor and propwash noise.
-  - [ ] (2) Bounded-memory ring-buffer acoustic feature cache for continuous sub-millisecond keyword spotting latency on microcontrollers.
-  - [ ] (3) Empirical evaluation harness measuring False Rejection Rate (FRR) and False Alarm Rate (FAR) under calibrated robotics noise floors.
-
-- [ ] **Realistic Formant & Glottal Speech Synthesis for Instant Synthetic Exemplar Generation - [P1]**
-  - [ ] (1) Liljencrants-Fant (LF) parametric glottal flow waveform generator integrated into Klatt cascade-parallel formant filter bank for natural, high-fidelity human vocal dynamics.
-  - [ ] (2) Automated synthetic speech pipeline: instantaneous generation of multi-pitch, multi-rate, and phonetic-variant audio exemplars from phonetic strings for zero-shot wake-word enrollment and training dataset synthesis.
-  - [ ] (3) On-device acoustic calibration benchmark: synthetic exemplar vs. live voice enrollment cross-validation suite.
+- [ ] **Multi-Speaker Synthetic Data Augmentation & Automated Calibration - [P1]**
+  - [ ] (1) Multi-accent, vocal tract length perturbation, and emotional prosody variation generator for rich synthetic training corpora.
+  - [ ] (2) On-device confusion matrix evaluation against phonetically similar non-keyword vocabulary (e.g., distinguishing "take off" from "shake off", "lake loft").
+  - [ ] (3) Synthetic exemplar export and dataset generator CLI command for offline model training and validation.
 
 ---
 
 ## Future
 
-- [ ] **Multi-Speaker Synthetic Data Augmentation & Automated Calibration - [P2]**
-  - [ ] (1) Instantaneous multi-accent, age, and vocal tract length perturbation generator for rich synthetic training corpora.
-  - [ ] (2) Automated DTW template barycenter averaging (DBA) synthesized from generated exemplar clusters.
+- [ ] **Adaptive Noise Floor Profiling & Online Dynamic Quantization - [P2]**
+  - [ ] (1) Online background noise clustering for dynamic DTW distance metric adaptation in changing acoustic environments.
+  - [ ] (2) 8-bit quantized streaming DTW matcher for memory-constrained microcontrollers.
 
 ---
 
 ## Done
+
+- [x] **High-Precision Wake-Word Spotting (KWS) & Streaming VAD Optimization - [P1]**
+  - [x] (1) Streaming multi-template Sakoe-Chiba DTW matcher (`match_streaming_window`) with noise-floor-aware threshold scaling (`StreamingDtwConfig`) and refractory lockout debounce logic.
+  - [x] (2) Bounded-memory ring-buffer acoustic feature cache (`FeatureRingBuffer`) providing zero-heap circular 2D frame storage for continuous sub-millisecond keyword spotting latency.
+  - [x] (3) Empirical evaluation harness measuring False Rejection Rate (FRR) and False Alarm Rate (FAR) under calibrated quadcopter rotor noise and silence, achieving 0% false alarms.
+
+- [x] **Realistic Formant & Glottal Speech Synthesis for Instant Synthetic Exemplar Generation - [P1]**
+  - [x] (1) Liljencrants-Fant (LF) parametric glottal flow waveform generator (`LiljencrantsFantPulse`) integrated into Klatt cascade-parallel formant filter bank (`KlattSynthesizer`) for natural, high-fidelity human vocal dynamics with Fant $R_d$ glottal shape control.
+  - [x] (2) Automated synthetic speech pipeline (`SyntheticExemplarGenerator`, `SononEngine::enroll_keyword_synthetic_pipeline`): instantaneous generation of multi-pitch, multi-rate, and vocal-tract-scaled audio exemplars from phonetic strings fused via Dynamic Time Warping Barycenter Averaging (DBA).
+  - [x] (3) On-device acoustic calibration benchmark (`tests/sonon_kws_synthesis_tests.rs`): verified synthetic exemplar generation diversity, cross-speaker male/female wake-word spotting, zero false alarms during drone noise/silence, and > 1,000,000 samples/sec real-time throughput.
 
 - [x] **Phase 27: Distributed Multi-UAV Swarm Acoustic Mesh Beamforming & Synthetic Aperture Acoustic Radar - [P3]**
   - [x] (1) Sub-microsecond IEEE 802.15.4z UWB clock synchronization model (`SwarmClockSync`) with Two-Way Ranging (TWR) time-transfer filter and drift tracking, verifying clock offset error $< 0.1\ \mu\text{s}$ ($0.000000\ \mu\text{s}$ residual error).

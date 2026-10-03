@@ -767,6 +767,65 @@ impl BandpassResonator {
     }
 }
 
+/// Analytical Liljencrants-Fant (LF-1985) parametric glottal flow model.
+/// Parameterized by Fant (1995) shape parameter Rd.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LiljencrantsFantPulse {
+    pub rd: f32,
+    pub tp: f32,
+    pub te: f32,
+    pub ta: f32,
+    pub alpha: f32,
+    pub wg: f32,
+    pub ee: f32,
+    pub epsilon: f32,
+}
+
+impl LiljencrantsFantPulse {
+    /// Construct an LF pulse model from Fant (1995) shape parameter Rd.
+    /// - Rd = 0.5: pressed / tense voice
+    /// - Rd = 1.0: modal / normal voice
+    /// - Rd = 2.0: lax / breathy voice
+    pub fn from_rd(rd: f32) -> Self {
+        let rd_clamped = rd.clamp(0.3, 2.7);
+        let ra = (-0.01 + 0.048 * rd_clamped).clamp(0.01, 0.12);
+        let rk = (0.224 + 0.118 * rd_clamped).clamp(0.20, 0.55);
+        let rg = ((0.5 + 1.2 * rk) / (0.11 * rd_clamped / (0.5 + 1.2 * rk) + rk)).clamp(0.7, 1.8);
+
+        let tp = (1.0 / (2.0 * rg)).clamp(0.40, 0.70);
+        let te = (tp * (1.0 + rk)).clamp(tp + 0.05, 0.85);
+        let ta = ra.clamp(0.01, 0.15);
+        let wg = PI / tp;
+        let alpha = 0.05 / te;
+        let ee = 1.0;
+        let epsilon = (1.0 / ta).clamp(5.0, 100.0);
+
+        Self {
+            rd: rd_clamped,
+            tp,
+            te,
+            ta,
+            alpha,
+            wg,
+            ee,
+            epsilon,
+        }
+    }
+
+    /// Evaluate glottal flow derivative wave at phase p in [0.0, 1.0).
+    #[inline(always)]
+    pub fn evaluate(&self, p: f32) -> f32 {
+        if p < self.te {
+            (self.alpha * p).exp() * (self.wg * p).sin() - 0.35 * (2.0 * self.wg * p).sin()
+        } else if p < (self.te + self.ta * 2.0).min(0.95) {
+            let dt = p - self.te;
+            -self.ee * (-self.epsilon * dt).exp()
+        } else {
+            0.0
+        }
+    }
+}
+
 /// Advanced Klatt & Liljencrants-Fant (LF) acoustic formant speech synthesizer in pure safe Rust.
 pub struct KlattSynthesizer {
     sample_rate: f32,
@@ -774,6 +833,7 @@ pub struct KlattSynthesizer {
     speaking_rate: f32,
     vocal_tract_scale: f32,
     breathiness: f32,
+    glottal_rd: f32,
 }
 
 impl KlattSynthesizer {
@@ -785,6 +845,7 @@ impl KlattSynthesizer {
             speaking_rate: 1.0,
             vocal_tract_scale: 1.0,
             breathiness: 0.03,
+            glottal_rd: 1.0, // Modal voice
         }
     }
 
@@ -806,6 +867,11 @@ impl KlattSynthesizer {
     /// Set vocal aspiration breathiness level (0.0 to 0.4).
     pub fn set_breathiness(&mut self, breathiness: f32) {
         self.breathiness = breathiness.clamp(0.0, 0.4);
+    }
+
+    /// Set Liljencrants-Fant glottal shape factor Rd (0.3 to 2.7).
+    pub fn set_glottal_rd(&mut self, rd: f32) {
+        self.glottal_rd = rd.clamp(0.3, 2.7);
     }
 
     /// Synthesize continuous raw audio samples from a list of phoneme segments.
@@ -933,6 +999,7 @@ impl KlattSynthesizer {
         let mut res_fric = BandpassResonator::new(fric_fc_traj[0], 1200.0, self.sample_rate);
         let mut res_burst = BandpassResonator::new(3000.0, 1000.0, self.sample_rate);
 
+        let lf_pulse = LiljencrantsFantPulse::from_rd(self.glottal_rd);
         let mut glottal_phase = 0.0f32;
         let mut noise_state = 12345678901234567u64;
         let mut y_rad_prev = 0.0f32;
@@ -956,15 +1023,9 @@ impl KlattSynthesizer {
                 glottal_phase -= 2.0 * PI;
             }
 
-            // Liljencrants-Fant (LF) inspired glottal flow derivative
+            // Liljencrants-Fant (LF) parametric glottal flow excitation
             let p = glottal_phase / (2.0 * PI);
-            let glottal_wave = if p < 0.65 {
-                (PI * p / 0.65).sin() - 0.35 * (2.0 * PI * p / 0.65).sin()
-            } else if p < 0.85 {
-                -0.90 * (PI * (p - 0.65) / 0.20).sin()
-            } else {
-                0.0
-            };
+            let glottal_wave = lf_pulse.evaluate(p);
 
             // 64-bit LCG white noise generator
             noise_state = noise_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
@@ -1040,3 +1101,108 @@ impl KlattSynthesizer {
         audio
     }
 }
+
+/// Configuration specifying parameter variations for generating diverse synthetic acoustic training exemplars.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExemplarVariationConfig {
+    /// Pitch frequencies in Hz to cycle across (e.g. male, female, youth, adult).
+    pub pitch_frequencies: Vec<f32>,
+    /// Speaking rate multipliers (e.g. 0.85 deliberate, 1.0 standard, 1.22 rapid).
+    pub speaking_rates: Vec<f32>,
+    /// Vocal tract length scale factors (e.g. 0.90 youth/female, 1.0 modal, 1.12 deep adult).
+    pub vocal_tract_scales: Vec<f32>,
+    /// Liljencrants-Fant glottal Rd shape factors (e.g. 0.7 pressed/authoritative, 1.0 modal, 1.4 relaxed).
+    pub glottal_rd_factors: Vec<f32>,
+    /// Breathiness aspiration amplitudes (e.g. 0.02 crisp, 0.05 breathy).
+    pub breathiness_levels: Vec<f32>,
+}
+
+impl Default for ExemplarVariationConfig {
+    fn default() -> Self {
+        Self {
+            pitch_frequencies: vec![105.0, 135.0, 175.0, 215.0],
+            speaking_rates: vec![0.88, 1.0, 1.18],
+            vocal_tract_scales: vec![0.92, 1.0, 1.10],
+            glottal_rd_factors: vec![0.75, 1.0, 1.35],
+            breathiness_levels: vec![0.02, 0.05],
+        }
+    }
+}
+
+/// Generator of diverse, realistic acoustic exemplars for zero-shot wake-word enrollment and training datasets.
+#[derive(Debug, Clone)]
+pub struct SyntheticExemplarGenerator {
+    sample_rate: f32,
+    config: ExemplarVariationConfig,
+}
+
+impl SyntheticExemplarGenerator {
+    /// Construct a new synthetic exemplar generator with default variation profiles.
+    pub fn new(sample_rate: f32) -> Self {
+        Self {
+            sample_rate,
+            config: ExemplarVariationConfig::default(),
+        }
+    }
+
+    /// Construct with custom variation profiles.
+    pub fn with_config(sample_rate: f32, config: ExemplarVariationConfig) -> Self {
+        Self {
+            sample_rate,
+            config,
+        }
+    }
+
+    /// Access reference to variation configuration.
+    pub fn config(&self) -> &ExemplarVariationConfig {
+        &self.config
+    }
+
+    /// Access mutable reference to variation configuration.
+    pub fn config_mut(&mut self) -> &mut ExemplarVariationConfig {
+        &mut self.config
+    }
+
+    /// Generate `count` diverse synthetic audio exemplars for the given phrase text.
+    pub fn generate_exemplars(&self, phrase: &str, count: usize) -> Vec<Vec<f32>> {
+        if count == 0 {
+            return Vec::new();
+        }
+
+        let segments = G2pEngine::text_to_phonemes(phrase);
+        if segments.is_empty() {
+            return Vec::new();
+        }
+
+        let n_pitch = self.config.pitch_frequencies.len().max(1);
+        let n_speed = self.config.speaking_rates.len().max(1);
+        let n_scale = self.config.vocal_tract_scales.len().max(1);
+        let n_rd = self.config.glottal_rd_factors.len().max(1);
+        let n_breath = self.config.breathiness_levels.len().max(1);
+
+        let mut exemplars = Vec::with_capacity(count);
+
+        for i in 0..count {
+            let mut synth = KlattSynthesizer::new(self.sample_rate);
+            let f0 = self.config.pitch_frequencies[i % n_pitch];
+            let rate = self.config.speaking_rates[(i / n_pitch) % n_speed];
+            let scale = self.config.vocal_tract_scales[(i / (n_pitch * n_speed)) % n_scale];
+            let rd = self.config.glottal_rd_factors[(i / (n_pitch * n_speed * n_scale)) % n_rd];
+            let breath = self.config.breathiness_levels[(i / (n_pitch * n_speed * n_scale * n_rd)) % n_breath];
+
+            synth.set_f0(f0);
+            synth.set_speaking_rate(rate);
+            synth.set_vocal_tract_scale(scale);
+            synth.set_glottal_rd(rd);
+            synth.set_breathiness(breath);
+
+            let audio = synth.synthesize(&segments);
+            if !audio.is_empty() {
+                exemplars.push(audio);
+            }
+        }
+
+        exemplars
+    }
+}
+
