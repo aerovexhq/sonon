@@ -46,6 +46,12 @@ pub mod vtln;
 pub mod voiceprint;
 pub mod ctc_beam_search;
 pub mod psola;
+pub mod mmse_lsa;
+
+pub use mmse_lsa::{
+    compute_lsa_gain, exponential_integral_e1, ImcraConfig, ImcraNoiseEstimator, LsaConfig,
+    MmseLsaFilter, MmseLsaTelemetry,
+};
 
 pub use aec::{
     AcousticEchoCanceller, AecConfig, CoherenceDtd, DtdConfig, DtdState, PbfdafConfig,
