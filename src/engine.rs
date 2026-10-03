@@ -1,5 +1,9 @@
 use crate::aec::{AcousticEchoCanceller, AecConfig};
-use crate::beamforming::ArrayGeometry;
+use crate::aeroacoustics::{
+    AeroacousticConfig, AeroacousticInverter, AeroacousticTelemetry, DirectivitySphere3D,
+    GroundNoiseFootprint, RotorGeometry,
+};
+use crate::beamforming::{ArrayGeometry, Point3D};
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::DtwMatcher;
@@ -77,6 +81,10 @@ pub struct SononEngine {
     latest_wind_telemetry: Option<WindNoiseTelemetry>,
     echolocator: Option<MultiMicAcousticEcholocator>,
     latest_point_cloud: Option<AcousticPointCloud>,
+    aeroacoustic_inverter: Option<AeroacousticInverter>,
+    latest_directivity_sphere: Option<DirectivitySphere3D>,
+    latest_ground_footprint: Option<GroundNoiseFootprint>,
+    latest_aeroacoustic_telemetry: Option<AeroacousticTelemetry>,
     current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
 }
@@ -141,6 +149,10 @@ impl SononEngine {
             latest_wind_telemetry: None,
             echolocator: None,
             latest_point_cloud: None,
+            aeroacoustic_inverter: None,
+            latest_directivity_sphere: None,
+            latest_ground_footprint: None,
+            latest_aeroacoustic_telemetry: None,
             current_motor_rpms: Vec::new(),
             num_mel_filters,
         }
@@ -646,6 +658,85 @@ impl SononEngine {
         Ok(cloud)
     }
 
+    /// Enable physics-informed aeroacoustic inverse source reconstruction and far-field directivity mapping.
+    pub fn enable_aeroacoustic_inversion(
+        &mut self,
+        rotors: Vec<RotorGeometry>,
+        mic_positions: Vec<Point3D>,
+        config: AeroacousticConfig,
+    ) {
+        self.aeroacoustic_inverter = Some(AeroacousticInverter::new(rotors, mic_positions, config));
+    }
+
+    /// Disable aeroacoustic inversion.
+    pub fn disable_aeroacoustic_inversion(&mut self) {
+        self.aeroacoustic_inverter = None;
+        self.latest_directivity_sphere = None;
+        self.latest_ground_footprint = None;
+        self.latest_aeroacoustic_telemetry = None;
+    }
+
+    /// Access reference to active aeroacoustic inverter if enabled.
+    pub fn aeroacoustic_inverter(&self) -> Option<&AeroacousticInverter> {
+        self.aeroacoustic_inverter.as_ref()
+    }
+
+    /// Access mutable reference to active aeroacoustic inverter if enabled.
+    pub fn aeroacoustic_inverter_mut(&mut self) -> Option<&mut AeroacousticInverter> {
+        self.aeroacoustic_inverter.as_mut()
+    }
+
+    /// Return latest evaluated 3D radiation directivity sphere.
+    pub fn latest_directivity_sphere(&self) -> Option<&DirectivitySphere3D> {
+        self.latest_directivity_sphere.as_ref()
+    }
+
+    /// Return latest evaluated 2D ground noise footprint projection.
+    pub fn latest_ground_noise_footprint(&self) -> Option<&GroundNoiseFootprint> {
+        self.latest_ground_footprint.as_ref()
+    }
+
+    /// Return latest evaluated aeroacoustic telemetry snapshot.
+    pub fn latest_aeroacoustic_telemetry(&self) -> Option<&AeroacousticTelemetry> {
+        self.latest_aeroacoustic_telemetry.as_ref()
+    }
+
+    /// Process multi-channel microphone audio recordings through the aeroacoustic inverter,
+    /// reconstructing unsteady blade forces, calculating 3D radiation directivity, and projecting ground dB(A) noise footprints.
+    pub fn process_aeroacoustic_frame(
+        &mut self,
+        channels: &[&[f32]],
+        altitude_agl_m: f32,
+        target_ground_pos_m: Option<(f32, f32)>,
+        current_yaw_rad: f32,
+    ) -> Result<AeroacousticTelemetry, String> {
+        let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+        let rpms = self.current_motor_rpms.clone();
+        let inverter = self
+            .aeroacoustic_inverter
+            .as_mut()
+            .ok_or_else(|| "Aeroacoustic inverter is not enabled".to_string())?;
+
+        let telem = inverter.process_frame(
+            channels,
+            &rpms,
+            altitude_agl_m,
+            target_ground_pos_m,
+            current_yaw_rad,
+            timestamp_sec,
+        );
+
+        if let Some(sphere) = inverter.latest_directivity_sphere() {
+            self.latest_directivity_sphere = Some(sphere.clone());
+        }
+        if let Some(footprint) = inverter.latest_ground_noise_footprint() {
+            self.latest_ground_footprint = Some(footprint.clone());
+        }
+        self.latest_aeroacoustic_telemetry = Some(telem.clone());
+
+        Ok(telem)
+    }
+
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
     pub fn doppler_scale_factor(&self) -> f32 {
         self.doppler.as_ref().map_or(1.0, |d| d.doppler_factor())
@@ -1073,6 +1164,9 @@ impl SononEngine {
         self.latest_pulp_telemetry = None;
         self.latest_wind_telemetry = None;
         self.latest_point_cloud = None;
+        self.latest_directivity_sphere = None;
+        self.latest_ground_footprint = None;
+        self.latest_aeroacoustic_telemetry = None;
         self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.last_sample = 0.0;
