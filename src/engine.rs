@@ -31,6 +31,7 @@ use crate::subbyte::{SubByteBitWidth, SubByteDtwMatcher, SubBytePhraseTemplate};
 use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer};
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
 use crate::ctc_beam_search::{CommandRecognitionResult, CtcCommandDecoder, CtcDecoderConfig};
+use crate::psola::{ProsodicEnsembleGenerator, PsolaConfig, PsolaModifier};
 use crate::spiking_vad::{SpikingNeuralVad, SpikingVadConfig, SpikingVadTelemetry};
 use crate::vad::EnergyVad;
 use crate::voiceprint::{OperatorVerifier, SpeakerVoiceprint, VerificationDecision};
@@ -1205,6 +1206,48 @@ impl SononEngine {
 
         self.dtw
             .add_template_exemplars(name_str, &feature_variants, band_radius, margin_factor)
+    }
+
+    /// Modify continuous speech audio prosody using Time-Domain Pitch-Synchronous Overlap-Add (TD-PSOLA).
+    /// Adjusts tempo rate multiplier (0.5 to 2.5) and shifts fundamental pitch by semitones (-12 to +12)
+    /// while preserving natural acoustic formant envelopes.
+    pub fn modify_speech_prosody(
+        &self,
+        audio: &[f32],
+        tempo_scale: f32,
+        pitch_shift_semitones: f32,
+    ) -> Vec<f32> {
+        let modifier = PsolaModifier::default();
+        let config = PsolaConfig {
+            tempo_scale,
+            pitch_shift_semitones,
+            sample_rate: self.sample_rate,
+        };
+        modifier.process(audio, &config)
+    }
+
+    /// Enroll a wake-word keyword directly from plain text using pitch-synchronous overlap-add (TD-PSOLA)
+    /// prosodic ensemble augmentation and DBA template fusion.
+    /// Programmatically generates diverse speech tempo and pitch variations, preserving formants,
+    /// fusing them into a speaker-invariant DTW template with automatic distance threshold calibration.
+    pub fn enroll_keyword_augmented_synthesis(
+        &mut self,
+        name: impl Into<String>,
+        text: &str,
+        band_radius: usize,
+        margin_factor: f32,
+    ) -> f32 {
+        let base_audio = self.synthesize_speech_from_text(text);
+        let generator = ProsodicEnsembleGenerator::new_standard_ensemble();
+        let variants = generator.generate_ensemble(&base_audio, self.sample_rate);
+
+        let mut all_waveforms: Vec<&[f32]> = Vec::with_capacity(variants.len() + 1);
+        all_waveforms.push(&base_audio);
+        for (_, wave) in &variants {
+            all_waveforms.push(wave);
+        }
+
+        self.enroll_keyword_multi(name, &all_waveforms, band_radius, margin_factor)
     }
 
     /// Enroll a wake-word phrase zero-shot directly from text using cross-attention phonetic alignment

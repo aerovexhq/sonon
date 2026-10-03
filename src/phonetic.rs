@@ -139,6 +139,8 @@ pub enum IntonationContour {
     AuthoritativeCommand,
     /// Urgent alert: elevated pitch baseline with intensified vibrato tremor.
     UrgentAlert,
+    /// Flat monotone pitch contour: invariant fundamental frequency across the entire utterance.
+    Flat,
 }
 
 impl Default for IntonationContour {
@@ -163,6 +165,7 @@ impl IntonationContour {
             IntonationContour::UrgentAlert => {
                 1.20 + 0.08 * (2.0 * PI * 8.5 * t_sec).sin()
             }
+            IntonationContour::Flat => 1.0,
         }
     }
 }
