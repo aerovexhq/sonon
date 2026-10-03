@@ -39,22 +39,26 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Adaptive Noise Floor Profiling & Online Dynamic Quantization - [P1]**
-  - [ ] (1) Online background noise clustering for dynamic DTW distance metric adaptation in changing acoustic environments.
-  - [ ] (2) 8-bit quantized streaming DTW matcher for memory-constrained microcontrollers.
-  - [ ] (3) Real-time benchmark evaluating fixed-point memory footprint and detection accuracy under non-stationary multi-rotor interference.
-
----
-
-## Future
-
 - [ ] **Multi-Channel Spatial Null-Steering & Dynamic Beamforming for KWS - [P2]**
   - [ ] (1) Integrated MVDR beamforming steered toward target operator with nulls placed at motor BPF harmonics.
   - [ ] (2) Co-simulation evaluation under moving multi-rotor platform flight dynamics.
 
 ---
 
+## Future
+
+- [ ] **Zero-Shot Wake-Word Enrollment via Cross-Attention Phonetic-Acoustic Alignment - [P2]**
+  - [ ] (1) Phonetic posteriorgram embedding alignment for zero-shot text-to-template calibration.
+  - [ ] (2) Multi-lingual phonetic foil discrimination and on-device adaptation.
+
+---
+
 ## Done
+
+- [x] **Adaptive Noise Floor Profiling & Online Dynamic Quantization - [P1]**
+  - [x] (1) Online background noise clustering (`AcousticNoiseClusterTracker`, `weighted_euclidean_distance`) estimating running feature variance, dynamic reliability weights $w_k \in [0.15, 1.0]$, and spectral flatness.
+  - [x] (2) 8-bit quantized streaming DTW matcher (`QuantizedFrame`, `QuantizedPhraseTemplate`, `QuantizedDtwMatcher`) with rolling 1D cost buffers achieving 75% RAM reduction ($O(M)$ memory bound) and zero 2D matrix heap allocation.
+  - [x] (3) Real-time benchmark and comprehensive test suite (`tests/sonon_quantized_kws_noise_profiling_tests.rs`, `sonon benchmark`) verifying affine quantization precision ($R^2 > 0.99$, MSE $< 0.05$), non-stationary noise adaptation, and > 15,000 distance evaluations/sec.
 
 - [x] **Multi-Speaker Synthetic Data Augmentation & Automated Calibration - [P1]**
   - [x] (1) Regional vocal accents (`VocalAccent::GeneralAmerican`, `ReceivedPronunciation`, `International`) and prosodic intonation contours (`IntonationContour::Declarative`, `AuthoritativeCommand`, `Interrogative`, `UrgentAlert`) integrated into `KlattSynthesizer`.

@@ -6,7 +6,10 @@ use crate::aeroacoustics::{
 use crate::beamforming::{ArrayGeometry, Point3D};
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
-use crate::dtw::{ConfusionMatrix, DtwMatcher, StreamingDtwConfig};
+use crate::dtw::{
+    AcousticNoiseClusterTracker, ConfusionMatrix, DtwMatcher, QuantizedDtwMatcher,
+    QuantizedPhraseTemplate, StreamingDtwConfig,
+};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -93,6 +96,7 @@ pub struct SononEngine {
     streaming_dtw_config: StreamingDtwConfig,
     refractory_lockout_remaining: usize,
     feature_ring_buffer: FeatureRingBuffer,
+    noise_tracker: AcousticNoiseClusterTracker,
 }
 
 impl SononEngine {
@@ -166,6 +170,7 @@ impl SononEngine {
             streaming_dtw_config: StreamingDtwConfig::default(),
             refractory_lockout_remaining: 0,
             feature_ring_buffer: FeatureRingBuffer::new(128, num_mfcc),
+            noise_tracker: AcousticNoiseClusterTracker::new(num_mfcc, 0.05),
         }
     }
 
@@ -846,6 +851,46 @@ impl SononEngine {
         &mut self.dtw
     }
 
+    /// Access reference to online acoustic noise tracker.
+    pub fn noise_tracker(&self) -> &AcousticNoiseClusterTracker {
+        &self.noise_tracker
+    }
+
+    /// Access mutable reference to online acoustic noise tracker.
+    pub fn noise_tracker_mut(&mut self) -> &mut AcousticNoiseClusterTracker {
+        &mut self.noise_tracker
+    }
+
+    /// Active feature reliability weights derived from running noise variance.
+    pub fn noise_feature_weights(&self) -> &[f32] {
+        self.noise_tracker.weights()
+    }
+
+    /// Spectral flatness of the background noise floor.
+    pub fn noise_spectral_flatness(&self) -> f32 {
+        self.noise_tracker.spectral_flatness()
+    }
+
+    /// Export 8-bit quantized DTW phrase matcher initialized with currently enrolled templates.
+    pub fn create_quantized_matcher(&self) -> QuantizedDtwMatcher {
+        let mut q_matcher = QuantizedDtwMatcher::new();
+        for template in self.dtw.templates() {
+            q_matcher.add_template(
+                &template.name,
+                &template.features,
+                template.threshold,
+                template.band_radius,
+            );
+        }
+        q_matcher
+    }
+
+    /// Export quantized phrase templates for embedded serialization.
+    pub fn export_quantized_templates(&self) -> Vec<QuantizedPhraseTemplate> {
+        let q_matcher = self.create_quantized_matcher();
+        q_matcher.templates().to_vec()
+    }
+
     /// Enroll a keyword phrase template into the engine using single feature sequence and default band corridor.
     pub fn enroll_keyword(&mut self, name: impl Into<String>, features: Vec<Vec<f32>>, threshold: f32) {
         self.max_history_frames = self.max_history_frames.max(features.len() + 32);
@@ -1121,6 +1166,10 @@ impl SononEngine {
                     }
                 };
 
+                if !is_speech {
+                    self.noise_tracker.update_noise(&mfcc);
+                }
+
                 self.feature_ring_buffer.push_frame(&mfcc);
                 self.feature_history.push(mfcc);
                 if self.feature_history.len() > self.max_history_frames {
@@ -1315,6 +1364,7 @@ impl SononEngine {
         self.latest_swarm_target_report = None;
         self.current_motor_rpms.clear();
         self.feature_history.clear();
+        self.noise_tracker.reset();
         self.last_sample = 0.0;
         self.total_samples_processed = 0;
     }
