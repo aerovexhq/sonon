@@ -19,6 +19,7 @@ use crate::riscv_pulp::{PulpConfig, PulpPowerModel, PulpTelemetry};
 use crate::ring_buffer::AudioRingBuffer;
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
+use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer};
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
 use crate::vad::EnergyVad;
 use crate::wind::{TurbulentBoundaryLayerSuppressor, WindNoiseTelemetry, WindTurbulenceConfig};
@@ -85,6 +86,8 @@ pub struct SononEngine {
     latest_directivity_sphere: Option<DirectivitySphere3D>,
     latest_ground_footprint: Option<GroundNoiseFootprint>,
     latest_aeroacoustic_telemetry: Option<AeroacousticTelemetry>,
+    swarm_beamformer: Option<SyntheticApertureBeamformer>,
+    latest_swarm_target_report: Option<SwarmTargetReport>,
     current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
 }
@@ -153,6 +156,8 @@ impl SononEngine {
             latest_directivity_sphere: None,
             latest_ground_footprint: None,
             latest_aeroacoustic_telemetry: None,
+            swarm_beamformer: None,
+            latest_swarm_target_report: None,
             current_motor_rpms: Vec::new(),
             num_mel_filters,
         }
@@ -737,6 +742,58 @@ impl SononEngine {
         Ok(telem)
     }
 
+    /// Enable distributed multi-UAV swarm acoustic mesh beamforming and synthetic aperture radar.
+    pub fn enable_swarm_mesh_beamforming(
+        &mut self,
+        local_node_id: usize,
+        config: SwarmMeshConfig,
+    ) {
+        self.swarm_beamformer = Some(SyntheticApertureBeamformer::new(local_node_id, config));
+    }
+
+    /// Disable swarm mesh beamforming.
+    pub fn disable_swarm_mesh_beamforming(&mut self) {
+        self.swarm_beamformer = None;
+        self.latest_swarm_target_report = None;
+    }
+
+    /// Access reference to active swarm synthetic aperture beamformer if enabled.
+    pub fn swarm_beamformer(&self) -> Option<&SyntheticApertureBeamformer> {
+        self.swarm_beamformer.as_ref()
+    }
+
+    /// Access mutable reference to active swarm synthetic aperture beamformer if enabled.
+    pub fn swarm_beamformer_mut(&mut self) -> Option<&mut SyntheticApertureBeamformer> {
+        self.swarm_beamformer.as_mut()
+    }
+
+    /// Update active swarm node coordinates and topologies across the mesh network.
+    pub fn update_swarm_nodes(&mut self, nodes: Vec<SwarmNodeState>) {
+        if let Some(ref mut beamformer) = self.swarm_beamformer {
+            beamformer.update_swarm_nodes(nodes);
+        }
+    }
+
+    /// Return latest evaluated swarm target localization report.
+    pub fn latest_swarm_target_report(&self) -> Option<&SwarmTargetReport> {
+        self.latest_swarm_target_report.as_ref()
+    }
+
+    /// Process multi-node acoustic recordings through the distributed synthetic aperture beamformer,
+    /// tracking distant ground vehicles and localizing targets with sub-degree angular precision.
+    pub fn process_swarm_mesh_frame(
+        &mut self,
+        node_audio_slices: &[&[f32]],
+    ) -> Option<SwarmTargetReport> {
+        let timestamp_sec = (self.total_samples_processed as f64) / (self.sample_rate as f64);
+        let beamformer = self.swarm_beamformer.as_mut()?;
+        let report = beamformer.process_swarm_frame(node_audio_slices, timestamp_sec);
+        if let Some(ref r) = report {
+            self.latest_swarm_target_report = Some(r.clone());
+        }
+        report
+    }
+
     /// Return current relativistic acoustic Doppler scale factor (1.0 if disabled or stationary).
     pub fn doppler_scale_factor(&self) -> f32 {
         self.doppler.as_ref().map_or(1.0, |d| d.doppler_factor())
@@ -1167,6 +1224,7 @@ impl SononEngine {
         self.latest_directivity_sphere = None;
         self.latest_ground_footprint = None;
         self.latest_aeroacoustic_telemetry = None;
+        self.latest_swarm_target_report = None;
         self.current_motor_rpms.clear();
         self.feature_history.clear();
         self.last_sample = 0.0;
