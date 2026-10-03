@@ -16,8 +16,9 @@ use crate::mel::MelFilterbank;
 use crate::notch::RotorHarmonicNotchBank;
 use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
-use crate::phonetic::{G2pEngine, KlattSynthesizer, SyntheticExemplarGenerator};
+use crate::phonetic::{G2pEngine, KlattSynthesizer, SyntheticExemplarGenerator, VocalAccent};
 use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
+use crate::zero_shot::{SupportedLanguage, ZeroShotCalibrationReport, ZeroShotCalibrator};
 use crate::riscv_pulp::{PulpConfig, PulpPowerModel, PulpTelemetry};
 use crate::ring_buffer::{AudioRingBuffer, FeatureRingBuffer};
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
@@ -863,6 +864,11 @@ impl SononEngine {
         self.pre_emphasis_alpha = alpha;
     }
 
+    /// Sampling rate in Hz.
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
     /// Access current feature history window.
     pub fn feature_history(&self) -> &[Vec<f32>] {
         &self.feature_history
@@ -1042,6 +1048,42 @@ impl SononEngine {
 
         self.dtw
             .add_template_exemplars(name_str, &feature_variants, band_radius, margin_factor)
+    }
+
+    /// Enroll a wake-word phrase zero-shot directly from text using cross-attention phonetic alignment
+    /// and automated minimal-pair foil discrimination margin threshold calibration.
+    pub fn enroll_keyword_zero_shot(
+        &mut self,
+        name: impl Into<String>,
+        phrase: &str,
+        language: SupportedLanguage,
+        accent: VocalAccent,
+    ) -> Result<ZeroShotCalibrationReport, String> {
+        let name_str = name.into();
+        let calibrator = ZeroShotCalibrator::new();
+        let (reference_template, report) = calibrator.calibrate(phrase, language, accent, self)?;
+
+        self.max_history_frames = self.max_history_frames.max(reference_template.len() + 32);
+        self.enroll_keyword_banded(
+            name_str,
+            reference_template,
+            report.calibrated_threshold,
+            12,
+        );
+
+        Ok(report)
+    }
+
+    /// Evaluate zero-shot phonetic discrimination margins and confusion matrix for a keyword phrase.
+    pub fn evaluate_zero_shot_discrimination(
+        &self,
+        phrase: &str,
+        language: SupportedLanguage,
+        accent: VocalAccent,
+    ) -> Result<ZeroShotCalibrationReport, String> {
+        let calibrator = ZeroShotCalibrator::new();
+        let (_, report) = calibrator.calibrate(phrase, language, accent, self)?;
+        Ok(report)
     }
 
     /// Access reference to active streaming DTW configuration.
