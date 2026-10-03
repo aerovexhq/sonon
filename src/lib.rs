@@ -56,7 +56,7 @@ pub use cwt::{
 pub use doppler::{speed_of_sound_at_temp, DopplerCompensator, DopplerConfig};
 pub use dtw::{
     calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded, DtwMatcher,
-    PhraseTemplate,
+    PhraseTemplate, StreamingDtwConfig, StreamingMatchResult,
 };
 pub use echolocation::{
     AcousticObstacle, AcousticPointCloud, CaCfarConfig, ChirpConfig, LfmChirpGenerator,
@@ -77,7 +77,10 @@ pub use ormia::{
     OrmiaBiquad, OrmiaBridgeFilter, OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry,
 };
 pub use pcen::{PcenConfig, PcenFilter};
-pub use phonetic::{FormantTarget, G2pEngine, KlattSynthesizer, Phoneme, PhonemeSegment};
+pub use phonetic::{
+    ExemplarVariationConfig, FormantTarget, G2pEngine, KlattSynthesizer, LiljencrantsFantPulse,
+    Phoneme, PhonemeSegment, SyntheticExemplarGenerator,
+};
 pub use psychoacoustic::{
     atmospheric_absorption_db_km, bark_to_freq, freq_to_bark, threshold_in_quiet_db,
     AcousticStealthReport, BarkBand, PsychoacousticConfig, PsychoacousticStealthEngine,
@@ -87,7 +90,7 @@ pub use riscv_pulp::{
     PackedI16x2, PackedI8x4, PulpConfig, PulpMemoryArena, PulpPowerModel, PulpTelemetry,
     PulpVectorEngine, RvvConfig, RvvVectorEngine,
 };
-pub use ring_buffer::AudioRingBuffer;
+pub use ring_buffer::{AudioRingBuffer, FeatureRingBuffer};
 pub use shm::{ShmAudioChannel, ShmHeader, DEFAULT_SHM_PATH};
 pub use spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 pub use stft::FftProcessor;

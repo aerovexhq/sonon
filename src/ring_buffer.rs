@@ -93,3 +93,89 @@ impl AudioRingBuffer {
         self.count = 0;
     }
 }
+
+/// Fixed-capacity circular 2D feature frame buffer for zero-heap streaming feature caching.
+#[derive(Debug, Clone)]
+pub struct FeatureRingBuffer {
+    buffer: Vec<Vec<f32>>,
+    head: usize,
+    count: usize,
+    capacity: usize,
+    feature_dim: usize,
+}
+
+impl FeatureRingBuffer {
+    /// Create a new feature ring buffer with fixed capacity and feature dimension.
+    pub fn new(capacity: usize, feature_dim: usize) -> Self {
+        assert!(capacity > 0, "Capacity must be non-zero");
+        assert!(feature_dim > 0, "Feature dimension must be non-zero");
+        Self {
+            buffer: vec![vec![0.0; feature_dim]; capacity],
+            head: 0,
+            count: 0,
+            capacity,
+            feature_dim,
+        }
+    }
+
+    /// Push a feature frame into the buffer, overwriting the oldest frame if at capacity.
+    pub fn push_frame(&mut self, frame: &[f32]) {
+        assert_eq!(frame.len(), self.feature_dim, "Feature frame dimension mismatch");
+        let write_pos = (self.head + self.count) % self.capacity;
+        self.buffer[write_pos].copy_from_slice(frame);
+        if self.count < self.capacity {
+            self.count += 1;
+        } else {
+            self.head = (self.head + 1) % self.capacity;
+        }
+    }
+
+    /// Return total buffered frames in chronological order as `Vec<Vec<f32>>`.
+    pub fn to_vec(&self) -> Vec<Vec<f32>> {
+        let mut out = Vec::with_capacity(self.count);
+        for i in 0..self.count {
+            let idx = (self.head + i) % self.capacity;
+            out.push(self.buffer[idx].clone());
+        }
+        out
+    }
+
+    /// Return latest `n` frames in chronological order.
+    pub fn get_latest(&self, n: usize) -> Vec<Vec<f32>> {
+        let take = n.min(self.count);
+        let start_offset = self.count - take;
+        let mut out = Vec::with_capacity(take);
+        for i in 0..take {
+            let idx = (self.head + start_offset + i) % self.capacity;
+            out.push(self.buffer[idx].clone());
+        }
+        out
+    }
+
+    /// Return current number of buffered frames.
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Check if buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Buffer capacity.
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Feature vector dimension.
+    pub fn feature_dim(&self) -> usize {
+        self.feature_dim
+    }
+
+    /// Clear all frames.
+    pub fn clear(&mut self) {
+        self.head = 0;
+        self.count = 0;
+    }
+}
+

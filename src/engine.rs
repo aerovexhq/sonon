@@ -6,17 +6,17 @@ use crate::aeroacoustics::{
 use crate::beamforming::{ArrayGeometry, Point3D};
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
-use crate::dtw::DtwMatcher;
+use crate::dtw::{DtwMatcher, StreamingDtwConfig};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
 use crate::notch::RotorHarmonicNotchBank;
 use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
-use crate::phonetic::{G2pEngine, KlattSynthesizer};
+use crate::phonetic::{G2pEngine, KlattSynthesizer, SyntheticExemplarGenerator};
 use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
 use crate::riscv_pulp::{PulpConfig, PulpPowerModel, PulpTelemetry};
-use crate::ring_buffer::AudioRingBuffer;
+use crate::ring_buffer::{AudioRingBuffer, FeatureRingBuffer};
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 use crate::stft::FftProcessor;
 use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer};
@@ -90,6 +90,9 @@ pub struct SononEngine {
     latest_swarm_target_report: Option<SwarmTargetReport>,
     current_motor_rpms: Vec<f32>,
     num_mel_filters: usize,
+    streaming_dtw_config: StreamingDtwConfig,
+    refractory_lockout_remaining: usize,
+    feature_ring_buffer: FeatureRingBuffer,
 }
 
 impl SononEngine {
@@ -160,6 +163,9 @@ impl SononEngine {
             latest_swarm_target_report: None,
             current_motor_rpms: Vec::new(),
             num_mel_filters,
+            streaming_dtw_config: StreamingDtwConfig::default(),
+            refractory_lockout_remaining: 0,
+            feature_ring_buffer: FeatureRingBuffer::new(128, num_mfcc),
         }
     }
 
@@ -935,6 +941,57 @@ impl SononEngine {
             .add_template_exemplars(name, &all_exemplars, band_radius, margin_factor)
     }
 
+    /// Enroll a keyword phrase using the automated synthetic speech exemplar pipeline.
+    /// Programmatically generates multiple pitch/rate/tract synthetic audio variations, fuses them with DBA,
+    /// and automatically calibrates the recognition distance threshold.
+    pub fn enroll_keyword_synthetic_pipeline(
+        &mut self,
+        name: impl Into<String>,
+        phrase: &str,
+        num_exemplars: usize,
+        band_radius: usize,
+        margin_factor: f32,
+    ) -> f32 {
+        let name_str = name.into();
+        let generator = SyntheticExemplarGenerator::new(self.sample_rate);
+        let audio_variants = generator.generate_exemplars(phrase, num_exemplars.max(3));
+        let mut feature_variants = Vec::with_capacity(audio_variants.len());
+
+        for audio in &audio_variants {
+            let feats = self.extract_features(audio);
+            if !feats.is_empty() {
+                feature_variants.push(feats);
+            }
+        }
+
+        for feats in &feature_variants {
+            self.max_history_frames = self.max_history_frames.max(feats.len() + 32);
+        }
+
+        self.dtw
+            .add_template_exemplars(name_str, &feature_variants, band_radius, margin_factor)
+    }
+
+    /// Access reference to active streaming DTW configuration.
+    pub fn streaming_dtw_config(&self) -> &StreamingDtwConfig {
+        &self.streaming_dtw_config
+    }
+
+    /// Access mutable reference to active streaming DTW configuration.
+    pub fn streaming_dtw_config_mut(&mut self) -> &mut StreamingDtwConfig {
+        &mut self.streaming_dtw_config
+    }
+
+    /// Replace active streaming DTW configuration.
+    pub fn set_streaming_dtw_config(&mut self, config: StreamingDtwConfig) {
+        self.streaming_dtw_config = config;
+    }
+
+    /// Access reference to internal zero-heap feature ring buffer.
+    pub fn feature_ring_buffer(&self) -> &FeatureRingBuffer {
+        &self.feature_ring_buffer
+    }
+
     /// Ingest streaming microphone samples alongside far-end loudspeaker reference samples.
     /// Cancels acoustic echo before running VAD, feature extraction, and wake-word spotting.
     pub fn ingest_samples_with_reference(
@@ -1064,22 +1121,53 @@ impl SononEngine {
                     }
                 };
 
+                self.feature_ring_buffer.push_frame(&mfcc);
                 self.feature_history.push(mfcc);
                 if self.feature_history.len() > self.max_history_frames {
                     self.feature_history.remove(0);
                 }
 
-                // Run Sakoe-Chiba corridor DTW match against current sliding observation window
-                if let Some((keyword, dist)) = self.dtw.match_window(&self.feature_history) {
-                    let timestamp_sec =
-                        (self.total_samples_processed as f64) / (self.sample_rate as f64);
-                    let confidence = (1.0 / (1.0 + dist)).clamp(0.0, 1.0);
-                    events.push(KeywordEvent {
-                        keyword,
-                        confidence,
-                        timestamp_sec,
-                    });
-                    self.feature_history.clear(); // Reset history after match to avoid duplicate triggers
+                if self.refractory_lockout_remaining > 0 {
+                    self.refractory_lockout_remaining -= 1;
+                } else {
+                    let noise_floor = self.vad.noise_floor();
+                    let mut matched = false;
+
+                    // Match candidate window lengths ending at current frame with noise-floor adaptation
+                    if let Some(res) = self.dtw.match_streaming_window(
+                        &self.feature_history,
+                        noise_floor,
+                        &self.streaming_dtw_config,
+                    ) {
+                        let timestamp_sec =
+                            (self.total_samples_processed as f64) / (self.sample_rate as f64);
+                        events.push(KeywordEvent {
+                            keyword: res.keyword,
+                            confidence: res.confidence,
+                            timestamp_sec,
+                        });
+                        self.refractory_lockout_remaining = self.streaming_dtw_config.refractory_frames;
+                        self.feature_history.clear();
+                        self.feature_ring_buffer.clear();
+                        matched = true;
+                    }
+
+                    // Fallback to match_window for legacy full-observation cases
+                    if !matched {
+                        if let Some((keyword, dist)) = self.dtw.match_window(&self.feature_history) {
+                            let timestamp_sec =
+                                (self.total_samples_processed as f64) / (self.sample_rate as f64);
+                            let confidence = (1.0 / (1.0 + dist)).clamp(0.0, 1.0);
+                            events.push(KeywordEvent {
+                                keyword,
+                                confidence,
+                                timestamp_sec,
+                            });
+                            self.refractory_lockout_remaining = self.streaming_dtw_config.refractory_frames;
+                            self.feature_history.clear();
+                            self.feature_ring_buffer.clear();
+                        }
+                    }
                 }
 
                 // Run PULP surveillance energy modeling if enabled
