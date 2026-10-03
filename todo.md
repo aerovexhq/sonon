@@ -28,30 +28,34 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ---
 
+> **Scope Freeze & Core Mission Directives**:
+> 1. **Zero Aerodynamics Expansion**: All aerodynamics, aeroacoustic modeling, and fluid-mechanical acoustic features are strictly frozen. Do not improve or expand aerodynamics features under any circumstances.
+> 2. **Removal of Unnecessary Phases**: Peripheral research (hardware drivers, RF radar, crypto-steganography, terrain altimetry) is eliminated.
+> 3. **Exclusive Engineering Focus**: All ongoing and future engineering in Sonon is restricted strictly to:
+>    - High-precision Wake-Word Spotting (KWS) and streaming Voice Activity Detection (VAD) under robotics noise.
+>    - High-quality, realistic speech synthesis for instant synthetic training data generation and on-device keyword calibration.
+
+---
+
 ## Current
 
 - [ ] **High-Precision Wake-Word Spotting (KWS) & Streaming VAD Optimization - [P1]**
   - [ ] (1) Streaming multi-template Sakoe-Chiba DTW matcher with adaptive confidence thresholding under non-stationary drone rotor and propwash noise.
   - [ ] (2) Bounded-memory ring-buffer acoustic feature cache for continuous sub-millisecond keyword spotting latency on microcontrollers.
-  - [ ] (3) Evaluation harness measuring False Rejection Rate (FRR) and False Alarm Rate (FAR) under calibrated robotics noise floors.
+  - [ ] (3) Empirical evaluation harness measuring False Rejection Rate (FRR) and False Alarm Rate (FAR) under calibrated robotics noise floors.
 
 - [ ] **Realistic Formant & Glottal Speech Synthesis for Instant Synthetic Exemplar Generation - [P1]**
-  - [ ] (1) Liljencrants-Fant (LF) parametric glottal flow waveform generator integrated into Klatt cascade-parallel formant filter bank.
-  - [ ] (2) Automated synthetic speech pipeline: instantaneous generation of multi-pitch, multi-rate, and phonetic-variant audio exemplars from phonetic strings for zero-shot wake-word enrollment.
+  - [ ] (1) Liljencrants-Fant (LF) parametric glottal flow waveform generator integrated into Klatt cascade-parallel formant filter bank for natural, high-fidelity human vocal dynamics.
+  - [ ] (2) Automated synthetic speech pipeline: instantaneous generation of multi-pitch, multi-rate, and phonetic-variant audio exemplars from phonetic strings for zero-shot wake-word enrollment and training dataset synthesis.
   - [ ] (3) On-device acoustic calibration benchmark: synthetic exemplar vs. live voice enrollment cross-validation suite.
 
 ---
 
 ## Future
 
-- [ ] **Edge Neuromorphic & Hardware Acceleration for Continuous Voice Listening - [P2]**
-  - [ ] (1) Hardware-in-the-loop streaming driver binding acoustic spike events directly to sub-milliwatt edge neural silicon.
-  - [ ] (2) Verification of continuous sub-100 microwatt listening on bare-metal Cortex-M and RISC-V targets.
-
-- [ ] **Multi-Channel Acoustic Spatial Isolation & Voice Anti-Spoofing - [P2]**
-  - [ ] (1) MVDR spatial beamforming steering nulls toward motor hubs while locking onto speaker voice direction.
-  - [ ] (2) On-device acoustic replay and synthetic voice spoofing rejection verifying physical vocal tract phase signatures.
-  - [ ] (3) Robust voice command grammar parsing for mission-critical robotic flight instructions.
+- [ ] **Multi-Speaker Synthetic Data Augmentation & Automated Calibration - [P2]**
+  - [ ] (1) Instantaneous multi-accent, age, and vocal tract length perturbation generator for rich synthetic training corpora.
+  - [ ] (2) Automated DTW template barycenter averaging (DBA) synthesized from generated exemplar clusters.
 
 ---
 
