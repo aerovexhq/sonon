@@ -55,8 +55,10 @@ pub use cwt::{
 };
 pub use doppler::{speed_of_sound_at_temp, DopplerCompensator, DopplerConfig};
 pub use dtw::{
-    calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded, ConfusionMatrix,
-    DtwMatcher, PhraseTemplate, StreamingDtwConfig, StreamingMatchResult,
+    calibrate_threshold, dtw_barycenter_averaging, extract_warping_path_banded,
+    weighted_euclidean_distance, AcousticNoiseClusterTracker, ConfusionMatrix, DtwMatcher,
+    PhraseTemplate, QuantizedDtwMatcher, QuantizedFrame, QuantizedPhraseTemplate,
+    StreamingDtwConfig, StreamingMatchResult,
 };
 pub use echolocation::{
     AcousticObstacle, AcousticPointCloud, CaCfarConfig, ChirpConfig, LfmChirpGenerator,

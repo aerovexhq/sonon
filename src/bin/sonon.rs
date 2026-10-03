@@ -5,6 +5,7 @@
 //! Provides edge execution, performance benchmarking, shared memory daemon hosting,
 //! and acoustic wake-word evaluation in 100% pure safe Rust.
 
+use sonon::dtw::QuantizedDtwMatcher;
 use sonon::engine::{FeatureMode, SononEngine};
 use sonon::neuromorphic::{NeuromorphicCochlea, SpikingKwsCell};
 use sonon::phonetic::{write_wav_file, SyntheticExemplarGenerator};
@@ -102,6 +103,26 @@ fn run_benchmark() {
         "[Spike Processing Velocity] Event Rate: {:.0} spikes/sec (Generated {} spikes)",
         spike_event_rate,
         spikes.len()
+    );
+
+    // 3. 8-Bit Quantized Integer DTW Matcher Benchmark
+    let q_matcher = engine.create_quantized_matcher();
+    let q_template = &q_matcher.templates()[0];
+    let q_start = Instant::now();
+    let q_iterations = 20_000;
+    for _ in 0..q_iterations {
+        let _ = QuantizedDtwMatcher::compute_distance_banded_q(
+            &q_template.frames,
+            &q_template.frames,
+            q_template.band_radius,
+        );
+    }
+    let q_elapsed = q_start.elapsed();
+    let q_rate = (q_iterations as f64) / q_elapsed.as_secs_f64();
+
+    println!(
+        "[8-Bit Quantized DTW Engine] Distance Evaluations: {:.0} calls/sec (-75% RAM footprint)",
+        q_rate
     );
 
     println!("============================================================");
