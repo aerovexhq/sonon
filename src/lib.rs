@@ -32,6 +32,7 @@ pub mod ring_buffer;
 pub mod shm;
 pub mod spectral_subtraction;
 pub mod stft;
+pub mod swarm_mesh;
 pub mod tse;
 pub mod vad;
 pub mod wasm;
@@ -90,6 +91,10 @@ pub use ring_buffer::AudioRingBuffer;
 pub use shm::{ShmAudioChannel, ShmHeader, DEFAULT_SHM_PATH};
 pub use spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
 pub use stft::FftProcessor;
+pub use swarm_mesh::{
+    DEFAULT_SPEED_OF_SOUND, SwarmClockSync, SwarmCovarianceConsensus, SwarmMeshConfig,
+    SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer,
+};
 pub use tse::{
     calculate_bearing_from_gps, Complex32, GpsCoordinate, SpatialConditioningTarget,
     TargetSoundExtractor, TseConfig, TseReport,
