@@ -137,6 +137,7 @@ fn test_mvdr_steering_vector_and_unity_gain_preservation() {
         attenuation_floor: 0.05,
         min_freq_hz: 200.0,
         max_freq_hz: 3500.0,
+        ..Default::default()
     };
 
     let mut extractor = TargetSoundExtractor::new(geometry.clone(), sample_rate, config);
@@ -211,6 +212,7 @@ fn test_multi_speaker_cocktail_party_interference_suppression() {
         attenuation_floor: 0.03, // -30 dB floor
         min_freq_hz: 200.0,
         max_freq_hz: 3800.0,
+        ..Default::default()
     };
 
     let mut extractor = TargetSoundExtractor::new(geometry.clone(), sample_rate, config);
@@ -345,6 +347,7 @@ fn test_integrated_sonon_engine_cocktail_party_wake_word_spotting() {
         attenuation_floor: 0.05,
         min_freq_hz: 150.0,
         max_freq_hz: 3800.0,
+        ..Default::default()
     };
     engine.enable_target_sound_extractor(geometry.clone(), tse_config);
     engine.update_target_bearing(0.0, 0.0);

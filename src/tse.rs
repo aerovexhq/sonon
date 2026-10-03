@@ -355,6 +355,16 @@ pub struct TseConfig {
     pub min_freq_hz: f32,
     /// Maximum frequency for spatial processing in Hz (e.g. 4000.0).
     pub max_freq_hz: f32,
+    /// Enable spatial null steering toward motor rotor locations.
+    pub motor_nulls_enabled: bool,
+    /// Number of rotor blades per propeller (typically 2).
+    pub num_blades: usize,
+    /// Number of BPF harmonics to notch with spatial nulls (e.g. 1 to 4).
+    pub bpf_harmonics: usize,
+    /// Guard bandwidth around each BPF harmonic in Hz (e.g. 35.0 Hz).
+    pub bpf_guard_bandwidth_hz: f32,
+    /// Apply null constraints strictly at BPF harmonic bins (if false, nulls applied across all voice frequencies).
+    pub selective_bpf_only: bool,
 }
 
 impl Default for TseConfig {
@@ -369,6 +379,11 @@ impl Default for TseConfig {
             attenuation_floor: 0.03,
             min_freq_hz: 150.0,
             max_freq_hz: 4000.0,
+            motor_nulls_enabled: false,
+            num_blades: 2,
+            bpf_harmonics: 3,
+            bpf_guard_bandwidth_hz: 70.0,
+            selective_bpf_only: false,
         }
     }
 }
@@ -432,6 +447,9 @@ pub struct TargetSoundExtractor {
     input_buffers: Vec<Vec<f32>>,
     latest_report: Option<TseReport>,
 
+    null_directions: Vec<(f32, f32)>,
+    motor_rpms: Vec<f32>,
+
     // Preallocated scratch buffers for zero-allocation streaming execution
     scratch_stft_real: Vec<f32>,
     scratch_stft_imag: Vec<f32>,
@@ -443,6 +461,12 @@ pub struct TargetSoundExtractor {
     scratch_target_spectrum: Vec<Complex32>,
     scratch_time_real: Vec<f32>,
     scratch_time_imag: Vec<f32>,
+    scratch_c_matrix: Vec<Complex32>,
+    scratch_v_matrix: Vec<Complex32>,
+    scratch_gamma: Vec<Complex32>,
+    scratch_g: Vec<Complex32>,
+    scratch_lambda: Vec<Complex32>,
+    scratch_null_steering: Vec<Complex32>,
 }
 
 impl TargetSoundExtractor {
@@ -486,6 +510,14 @@ impl TargetSoundExtractor {
         let scratch_time_real = vec![0.0f32; config.fft_size];
         let scratch_time_imag = vec![0.0f32; config.fft_size];
 
+        let max_k = num_mics.min(8);
+        let scratch_c_matrix = vec![Complex32::zero(); num_mics * max_k];
+        let scratch_v_matrix = vec![Complex32::zero(); num_mics * max_k];
+        let scratch_gamma = vec![Complex32::zero(); max_k * max_k];
+        let scratch_g = vec![Complex32::zero(); max_k];
+        let scratch_lambda = vec![Complex32::zero(); max_k];
+        let scratch_null_steering = vec![Complex32::zero(); num_mics];
+
         Self {
             geometry,
             positions,
@@ -496,6 +528,8 @@ impl TargetSoundExtractor {
                 azimuth_rad: 0.0,
                 elevation_rad: 0.0,
             },
+            null_directions: Vec::new(),
+            motor_rpms: Vec::new(),
             fft: FftProcessor::new(config.fft_size),
             analysis_window: Window::new(WindowType::Hann, config.fft_size),
             covariances,
@@ -512,6 +546,12 @@ impl TargetSoundExtractor {
             scratch_target_spectrum,
             scratch_time_real,
             scratch_time_imag,
+            scratch_c_matrix,
+            scratch_v_matrix,
+            scratch_gamma,
+            scratch_g,
+            scratch_lambda,
+            scratch_null_steering,
         }
     }
 
@@ -540,6 +580,52 @@ impl TargetSoundExtractor {
     /// Get current active steered (azimuth_rad, elevation_rad).
     pub fn steered_bearing(&self) -> (f32, f32) {
         self.target.angles()
+    }
+
+    /// Update motor RPM telemetry and propeller blade count for BPF harmonic tracking.
+    pub fn set_motor_rpms(&mut self, rpms: &[f32], num_blades: usize) {
+        self.motor_rpms = rpms.to_vec();
+        self.config.num_blades = num_blades;
+    }
+
+    /// Access currently tracked motor RPMs.
+    pub fn motor_rpms(&self) -> &[f32] {
+        &self.motor_rpms
+    }
+
+    /// Configure motor null coordinates in the airframe body frame (meters relative to array center).
+    /// Automatically converts 3D coordinates into (azimuth_rad, elevation_rad) null steering constraints.
+    pub fn set_motor_null_positions(&mut self, motor_positions: &[Point3D]) {
+        self.null_directions.clear();
+        for pos in motor_positions {
+            let horizontal_dist = (pos.x * pos.x + pos.y * pos.y).sqrt();
+            let az = pos.y.atan2(pos.x);
+            let el = (-pos.z).atan2(horizontal_dist.max(1e-3));
+            self.null_directions.push((az, el));
+        }
+        self.config.motor_nulls_enabled = true;
+    }
+
+    /// Configure explicit spatial null directions as (azimuth_rad, elevation_rad) tuples.
+    pub fn set_spatial_null_directions(&mut self, null_directions: &[(f32, f32)]) {
+        self.null_directions = null_directions.to_vec();
+        self.config.motor_nulls_enabled = true;
+    }
+
+    /// Disable spatial null constraints.
+    pub fn clear_spatial_nulls(&mut self) {
+        self.null_directions.clear();
+        self.config.motor_nulls_enabled = false;
+    }
+
+    /// Access active spatial null directions.
+    pub fn null_directions(&self) -> &[(f32, f32)] {
+        &self.null_directions
+    }
+
+    /// Access mutable reference to active TSE configuration.
+    pub fn config_mut(&mut self) -> &mut TseConfig {
+        &mut self.config
     }
 
     /// Compute acoustic steering vector a(k) for given frequency and angles.
@@ -688,23 +774,65 @@ impl TargetSoundExtractor {
                 &mut self.scratch_a_k,
             );
 
-            // Solve R_reg * v = a in-place
-            let solved = solve_complex_linear_system_in_place(
-                self.num_mics,
-                &self.scratch_reg_cov,
-                &self.scratch_a_k,
-                &mut self.scratch_mvdr_sol,
-            );
+            // Solve weights: either LCMV with motor spatial nulls or standard MVDR
+            let num_nulls = if self.config.motor_nulls_enabled && !self.null_directions.is_empty() {
+                let apply_nulls = if self.config.selective_bpf_only {
+                    let num_blades = self.config.num_blades.max(1) as f32;
+                    let harmonics = self.config.bpf_harmonics.max(1);
+                    let guard = self.config.bpf_guard_bandwidth_hz;
+                    let mut near_bpf = false;
+                    for &rpm in &self.motor_rpms {
+                        if rpm > 50.0 {
+                            let fund = (rpm / 60.0) * num_blades;
+                            for h in 1..=harmonics {
+                                let f_h = (h as f32) * fund;
+                                if (freq_hz - f_h).abs() <= guard {
+                                    near_bpf = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if near_bpf {
+                            break;
+                        }
+                    }
+                    near_bpf
+                } else {
+                    freq_hz >= self.config.min_freq_hz && freq_hz <= self.config.max_freq_hz
+                };
 
-            if solved {
-                // Denominator: a^H * v = sum(a_m^* * v_m)
-                let mut denom = Complex32::zero();
-                for m in 0..self.num_mics {
-                    denom = denom.add(self.scratch_a_k[m].conj().mul(self.scratch_mvdr_sol[m]));
+                if apply_nulls {
+                    self.null_directions.len().min(self.num_mics - 1).min(7)
+                } else {
+                    0
                 }
-                if denom.re > 1e-9 {
+            } else {
+                0
+            };
+
+            if num_nulls == 0 {
+                // Standard MVDR solver
+                let solved = solve_complex_linear_system_in_place(
+                    self.num_mics,
+                    &self.scratch_reg_cov,
+                    &self.scratch_a_k,
+                    &mut self.scratch_mvdr_sol,
+                );
+
+                if solved {
+                    let mut denom = Complex32::zero();
                     for m in 0..self.num_mics {
-                        self.scratch_mvdr_weights[m] = self.scratch_mvdr_sol[m].div(denom);
+                        denom = denom.add(self.scratch_a_k[m].conj().mul(self.scratch_mvdr_sol[m]));
+                    }
+                    if denom.re > 1e-9 {
+                        for m in 0..self.num_mics {
+                            self.scratch_mvdr_weights[m] = self.scratch_mvdr_sol[m].div(denom);
+                        }
+                    } else {
+                        let inv_m = 1.0 / (self.num_mics as f32);
+                        for m in 0..self.num_mics {
+                            self.scratch_mvdr_weights[m] = self.scratch_a_k[m].scale(inv_m);
+                        }
                     }
                 } else {
                     let inv_m = 1.0 / (self.num_mics as f32);
@@ -713,9 +841,123 @@ impl TargetSoundExtractor {
                     }
                 }
             } else {
-                let inv_m = 1.0 / (self.num_mics as f32);
+                // Linearly Constrained Minimum Variance (LCMV) Null-Steering Formulation
+                let k_constraints = 1 + num_nulls;
+
+                // Column 0: Target steering vector
                 for m in 0..self.num_mics {
-                    self.scratch_mvdr_weights[m] = self.scratch_a_k[m].scale(inv_m);
+                    self.scratch_c_matrix[m] = self.scratch_a_k[m];
+                }
+
+                // Columns 1..K: Null steering vectors
+                for p in 0..num_nulls {
+                    let (null_az, null_el) = self.null_directions[p];
+                    compute_steering_vector_static(
+                        &self.positions,
+                        freq_hz,
+                        null_az,
+                        null_el,
+                        &mut self.scratch_null_steering,
+                    );
+                    for m in 0..self.num_mics {
+                        self.scratch_c_matrix[(p + 1) * self.num_mics + m] =
+                            self.scratch_null_steering[m];
+                    }
+                }
+
+                // Solve R_reg * V = C column-by-column
+                let mut all_solved = true;
+                for j in 0..k_constraints {
+                    let c_start = j * self.num_mics;
+                    let v_start = j * self.num_mics;
+                    let solved_j = solve_complex_linear_system_in_place(
+                        self.num_mics,
+                        &self.scratch_reg_cov,
+                        &self.scratch_c_matrix[c_start..c_start + self.num_mics],
+                        &mut self.scratch_v_matrix[v_start..v_start + self.num_mics],
+                    );
+                    if !solved_j {
+                        all_solved = false;
+                        break;
+                    }
+                }
+
+                let mut lcmv_success = false;
+                if all_solved {
+                    // Gamma = C^H * V (size K x K)
+                    for r in 0..k_constraints {
+                        let c_r_start = r * self.num_mics;
+                        for c in 0..k_constraints {
+                            let v_c_start = c * self.num_mics;
+                            let mut dot = Complex32::zero();
+                            for m in 0..self.num_mics {
+                                let c_val = self.scratch_c_matrix[c_r_start + m].conj();
+                                let v_val = self.scratch_v_matrix[v_c_start + m];
+                                dot = dot.add(c_val.mul(v_val));
+                            }
+                            if r == c {
+                                dot.re += 1e-6; // numerical diagonal loading
+                            }
+                            self.scratch_gamma[r * k_constraints + c] = dot;
+                        }
+                    }
+
+                    // g = [1.0, 0.0, ...]
+                    self.scratch_g[..k_constraints].fill(Complex32::zero());
+                    self.scratch_g[0] = Complex32::one();
+
+                    // Solve Gamma * lambda = g
+                    let solved_gamma = solve_complex_linear_system_in_place(
+                        k_constraints,
+                        &self.scratch_gamma[..k_constraints * k_constraints],
+                        &self.scratch_g[..k_constraints],
+                        &mut self.scratch_lambda[..k_constraints],
+                    );
+
+                    if solved_gamma {
+                        // w = sum_{j=0}^{K-1} lambda_j * v_j
+                        for m in 0..self.num_mics {
+                            let mut w_m = Complex32::zero();
+                            for j in 0..k_constraints {
+                                let lambda_j = self.scratch_lambda[j];
+                                let v_jm = self.scratch_v_matrix[j * self.num_mics + m];
+                                w_m = w_m.add(lambda_j.mul(v_jm));
+                            }
+                            self.scratch_mvdr_weights[m] = w_m;
+                        }
+                        lcmv_success = true;
+                    }
+                }
+
+                if !lcmv_success {
+                    // Fallback to target-only MVDR
+                    let solved = solve_complex_linear_system_in_place(
+                        self.num_mics,
+                        &self.scratch_reg_cov,
+                        &self.scratch_a_k,
+                        &mut self.scratch_mvdr_sol,
+                    );
+                    if solved {
+                        let mut denom = Complex32::zero();
+                        for m in 0..self.num_mics {
+                            denom = denom.add(self.scratch_a_k[m].conj().mul(self.scratch_mvdr_sol[m]));
+                        }
+                        if denom.re > 1e-9 {
+                            for m in 0..self.num_mics {
+                                self.scratch_mvdr_weights[m] = self.scratch_mvdr_sol[m].div(denom);
+                            }
+                        } else {
+                            let inv_m = 1.0 / (self.num_mics as f32);
+                            for m in 0..self.num_mics {
+                                self.scratch_mvdr_weights[m] = self.scratch_a_k[m].scale(inv_m);
+                            }
+                        }
+                    } else {
+                        let inv_m = 1.0 / (self.num_mics as f32);
+                        for m in 0..self.num_mics {
+                            self.scratch_mvdr_weights[m] = self.scratch_a_k[m].scale(inv_m);
+                        }
+                    }
                 }
             }
 
@@ -727,7 +969,11 @@ impl TargetSoundExtractor {
             }
 
             // Spatial Conditioning Mask Computation
-            let spatial_mask = if freq_hz >= self.config.min_freq_hz
+            let spatial_mask = if self.config.motor_nulls_enabled {
+                mask_sum += 1.0;
+                mask_count += 1;
+                1.0
+            } else if freq_hz >= self.config.min_freq_hz
                 && freq_hz <= self.config.max_freq_hz
                 && num_pairs > 0
             {
@@ -888,5 +1134,169 @@ impl TargetSoundExtractor {
         }
         self.overlap_buffer.fill(0.0);
         self.latest_report = None;
+    }
+}
+
+/// Flight kinematics simulation state for moving UAV platform co-simulation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlightDynamicsSimulator {
+    /// 3D position in local Cartesian coordinates (meters, NED).
+    pub drone_position: Point3D,
+    /// 3D velocity vector (vx, vy, vz) in m/s.
+    pub drone_velocity: Point3D,
+    /// Attitude angles in radians: roll (phi), pitch (theta), yaw (psi).
+    pub roll_rad: f32,
+    pub pitch_rad: f32,
+    pub yaw_rad: f32,
+    /// Attitude angular rates in rad/s: roll rate (p), pitch rate (q), yaw rate (r).
+    pub roll_rate: f32,
+    pub pitch_rate: f32,
+    pub yaw_rate: f32,
+    /// Ground operator stationary position in local coordinates (meters).
+    pub operator_position: Point3D,
+}
+
+impl FlightDynamicsSimulator {
+    /// Create a new flight dynamics simulator with initial drone and operator positions.
+    pub fn new(drone_position: Point3D, operator_position: Point3D) -> Self {
+        Self {
+            drone_position,
+            drone_velocity: Point3D::new(0.0, 0.0, 0.0),
+            roll_rad: 0.0,
+            pitch_rad: 0.0,
+            yaw_rad: 0.0,
+            roll_rate: 0.0,
+            pitch_rate: 0.0,
+            yaw_rate: 0.0,
+            operator_position,
+        }
+    }
+
+    /// Set linear flight velocity vector (vx, vy, vz) in m/s.
+    pub fn with_velocity(mut self, vx: f32, vy: f32, vz: f32) -> Self {
+        self.drone_velocity = Point3D::new(vx, vy, vz);
+        self
+    }
+
+    /// Set angular body rates (roll_rate, pitch_rate, yaw_rate) in rad/s.
+    pub fn with_rates(mut self, roll_rate: f32, pitch_rate: f32, yaw_rate: f32) -> Self {
+        self.roll_rate = roll_rate;
+        self.pitch_rate = pitch_rate;
+        self.yaw_rate = yaw_rate;
+        self
+    }
+
+    /// Step flight kinematics by `dt_sec` seconds.
+    pub fn step(&mut self, dt_sec: f32) {
+        self.drone_position.x += self.drone_velocity.x * dt_sec;
+        self.drone_position.y += self.drone_velocity.y * dt_sec;
+        self.drone_position.z += self.drone_velocity.z * dt_sec;
+
+        self.roll_rad += self.roll_rate * dt_sec;
+        self.pitch_rad += self.pitch_rate * dt_sec;
+        self.yaw_rad += self.yaw_rate * dt_sec;
+
+        // Wrap yaw into [-PI, PI]
+        while self.yaw_rad > PI {
+            self.yaw_rad -= 2.0 * PI;
+        }
+        while self.yaw_rad < -PI {
+            self.yaw_rad += 2.0 * PI;
+        }
+    }
+
+    /// Calculate 3D Euclidean distance to stationary operator in meters.
+    pub fn distance_to_operator(&self) -> f32 {
+        self.drone_position.distance_to(&self.operator_position)
+    }
+
+    /// Compute relative (azimuth_rad, elevation_rad) of operator in the drone's body-fixed coordinate frame.
+    ///
+    /// Body axes convention: +X Forward, +Y Right (Starboard), +Z Down.
+    pub fn relative_bearing_to_operator(&self) -> (f32, f32) {
+        let dx = self.operator_position.x - self.drone_position.x;
+        let dy = self.operator_position.y - self.drone_position.y;
+        let dz = self.operator_position.z - self.drone_position.z;
+
+        let cy = self.yaw_rad.cos();
+        let sy = self.yaw_rad.sin();
+        let cp = self.pitch_rad.cos();
+        let sp = self.pitch_rad.sin();
+        let cr = self.roll_rad.cos();
+        let sr = self.roll_rad.sin();
+
+        // Direction cosine matrix (DCM) World-to-Body:
+        let bx = cp * cy * dx + cp * sy * dy - sp * dz;
+        let by = (sr * sp * cy - cr * sy) * dx + (sr * sp * sy + cr * cy) * dy + sr * cp * dz;
+        let bz = (cr * sp * cy + sr * sy) * dx + (cr * sp * sy - sr * cy) * dy + cr * cp * dz;
+
+        let horizontal_dist = (bx * bx + by * by).sqrt();
+        let azimuth = by.atan2(bx);
+        let elevation = (-bz).atan2(horizontal_dist.max(1e-3));
+
+        (azimuth, elevation)
+    }
+
+    /// Synthesize multi-channel microphone recordings for moving platform co-simulation.
+    /// Simulates incoming target speech waveform from operator position alongside quadcopter motor noise.
+    pub fn synthesize_multi_channel_co_simulation(
+        &self,
+        geometry: &ArrayGeometry,
+        target_speech: &[f32],
+        motor_positions: &[Point3D],
+        motor_rpms: &[f32],
+        sample_rate: f32,
+    ) -> Vec<Vec<f32>> {
+        let positions = geometry.positions();
+        let num_mics = positions.len();
+        let num_samples = target_speech.len();
+        let mut channels = vec![vec![0.0f32; num_samples]; num_mics];
+
+        let (target_az, target_el) = self.relative_bearing_to_operator();
+        let target_dist = self.distance_to_operator().max(1.0);
+        let speech_gain = (3.0 / target_dist).clamp(0.4, 1.0);
+
+        let u_x = target_el.cos() * target_az.cos();
+        let u_y = target_el.cos() * target_az.sin();
+        let u_z = target_el.sin();
+
+        // 1. Target speech acoustic propagation to array
+        for (m, pos) in positions.iter().enumerate() {
+            let tau_sec = -(pos.x * u_x + pos.y * u_y + pos.z * u_z) / SPEED_OF_SOUND;
+            let delay_samples = (tau_sec * sample_rate).round() as isize;
+
+            for t in 0..num_samples {
+                let src_idx = (t as isize) - delay_samples;
+                if src_idx >= 0 && (src_idx as usize) < num_samples {
+                    channels[m][t] += target_speech[src_idx as usize] * speech_gain;
+                }
+            }
+        }
+
+        // 2. Multi-rotor acoustic interference injection
+        for (motor_idx, &m_pos) in motor_positions.iter().enumerate() {
+            let rpm = motor_rpms.get(motor_idx).copied().unwrap_or(4800.0);
+            let bpf_fund = (rpm / 60.0) * 2.0; // 2-blade propeller
+
+            for (m, mic_pos) in positions.iter().enumerate() {
+                let dist_to_mic = m_pos.distance_to(mic_pos).max(0.05);
+                let motor_gain = 0.05 / dist_to_mic;
+
+                for t in 0..num_samples {
+                    let time_s = (t as f32) / sample_rate;
+                    let tau_motor = dist_to_mic / SPEED_OF_SOUND;
+                    let delayed_t = time_s - tau_motor;
+
+                    let phase_offset = motor_idx as f32 * 1.57;
+                    let tonal = 0.5 * (2.0 * PI * bpf_fund * delayed_t + phase_offset).sin()
+                        + 0.3 * (4.0 * PI * bpf_fund * delayed_t + phase_offset * 2.0).sin()
+                        + 0.15 * (6.0 * PI * bpf_fund * delayed_t + phase_offset * 3.0).sin();
+
+                    channels[m][t] += tonal * motor_gain;
+                }
+            }
+        }
+
+        channels
     }
 }
