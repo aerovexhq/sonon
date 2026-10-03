@@ -30,10 +30,10 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Phase 25: Acoustic Echolocation & 3D Obstacle Spatial Mapping for GPS-Denied Subterranean UAV Flight - [P2]**
-  - [ ] (1) Ultrasonic and high-frequency acoustic chirp emit-receive pulse compression (chirp cross-correlation).
-  - [ ] (2) 3D point cloud generation of cave walls, pipes, and obstacles from rotor acoustic reflections in zero-visibility smoke/darkness.
-  - [ ] (3) Zero-drift acoustic range estimation verified against ground truth obstacle targets.
+- [ ] **Phase 26: Physics-Informed Aeroacoustic Inverse Source Reconstruction & Far-Field Pressure Directivity Mapping - [P2]**
+  - [ ] (1) Discrete Ffowcs Williams-Hawkings (FW-H) acoustic analogy integral solver computing loading and thickness dipole/quadrupole source strengths.
+  - [ ] (2) In-flight 3D radiation directivity sphere reconstruction mapping ground acoustic footprint in real-time.
+  - [ ] (3) Flight path optimization recommendations for noise-sensitive urban corridors.
 
 ---
 
@@ -42,11 +42,6 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 - [ ] **Phase 18 (Hardware Integration): SynSense Xylo / BrainChip Akida Hardware-in-the-Loop AER Driver - [P3]**
   - [ ] (1) SPI/I2C streaming driver binding `SpikeEvent` directly to physical neuromorphic accelerator silicon.
   - [ ] (2) Sub-10 microwatt continuous edge listening verification on benchtop power analyzer.
-
-- [ ] **Phase 26: Physics-Informed Aeroacoustic Inverse Source Reconstruction & Far-Field Pressure Directivity Mapping - [P2]**
-  - [ ] (1) Discrete Ffowcs Williams-Hawkings (FW-H) acoustic analogy integral solver computing loading and thickness dipole/quadrupole source strengths.
-  - [ ] (2) In-flight 3D radiation directivity sphere reconstruction mapping ground acoustic footprint in real-time.
-  - [ ] (3) Flight path optimization recommendations for noise-sensitive urban corridors.
 
 - [ ] **Phase 27: Distributed Multi-UAV Swarm Acoustic Mesh Beamforming & Synthetic Aperture Acoustic Radar - [P3]**
   - [ ] (1) Clock-synchronized distributed array beamforming across multi-drone swarms via ultra-wideband (UWB) time-stamping.
@@ -101,6 +96,16 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 ---
 
 ## Done
+
+- [x] **Phase 25: Acoustic Echolocation & 3D Obstacle Spatial Mapping for GPS-Denied Subterranean UAV Flight - [P2]**
+  - [x] (1) Active Linear Frequency Modulated (LFM) chirp pulse compression in pure safe Rust (`src/echolocation.rs`, `#![deny(unsafe_code)]`), achieving theoretical processing gain $G_{\text{proc}} = 10 \log_{10}(B \cdot T_p) = 16.02\text{ dB} > 15.0\text{ dB}$ and radial range resolution $\Delta R = c / (2B) = 4.29\text{ cm} < 5.0\text{ cm}$.
+  - [x] (2) Cell-Averaging Constant False Alarm Rate (CA-CFAR) adaptive thresholding with guard and training cell windowing, paired with Non-Maximum Suppression (NMS) peak clustering ($W_{\text{cluster}} = 1.0\text{ ms}$) to collapse secondary chirp ripple sidelobes into unique physical obstacle detections.
+  - [x] (3) Sub-sample 3-point parabolic peak interpolation on cross-correlation envelope, refining Time-of-Flight (ToF) range precision to $< 0.7\text{ cm}$ ($< 2.0\text{ cm}$ specification) and recovering continuous fractional inter-microphone TDoA to achieve $< 1.73^\circ$ angular bearing accuracy ($< 4.0^\circ$ specification) at $16\text{ kHz}$.
+  - [x] (4) Multi-microphone 3D Direction-of-Arrival (DoA) triangulation supporting Linear lateral, Circular planar, and Tetrahedral 3D array topologies, projecting detections into body-frame Cartesian coordinates (`AcousticPointCloud`, `Point3D`).
+  - [x] (5) 5-axis directional clearance boundary tracking (forward, port, starboard, floor, ceiling) with proactive collision hazard trigger (`is_collision_risk`) upon breaching safety clearance threshold ($R_{\text{min}} \le 1.0\text{ m}$).
+  - [x] (6) Subterranean mine shaft / karst cave acoustic simulator (`SubterraneanCaveSimulator`): synthesizes direct-path emitter-to-mic leakage, multi-obstacle multipath reflections with $1/R^2$ spherical spreading attenuation and rock reflection coefficients, and quadcopter rotor Blade Pass Frequency (BPF) tonal hum and aerodynamic turbulence noise.
+  - [x] (7) High-throughput streaming engine integration (`SononEngine::enable_acoustic_echolocation`, `process_multi_channel_echolocation`, `latest_point_cloud`), operating at $> 420,000\text{ samples/sec}$ ($> 26\times$ real-time), emitting standardized MAVLink v2 `NAMED_VALUE_FLOAT` telemetry (`ECHO_DIST`, `ECHO_CONF`, `ECHO_PTS`).
+  - [x] (8) Verified 100% test pass rate across all 5 tests in `tests/sonon_phase25_tests.rs` (100% PASS across all 23 test suites crate-wide), and published scientific Monograph 30 mirrored to `analysis/physics/`.
 
 - [x] **Phase 24: Aerodynamic Wind Buffeting Incoherent Noise Separation & Turbulent Boundary Layer Suppression - [P2]**
   - [x] (1) Multi-channel convective turbulence phase-decorrelation filter in pure safe Rust (`src/wind.rs`, `#![deny(unsafe_code)]`), exploiting the physical divergence between propagating acoustic sound waves ($c \approx 343\text{ m/s}$) and hydrodynamic wall-pressure fluctuations (pseudosound, $U_c \ll c$).

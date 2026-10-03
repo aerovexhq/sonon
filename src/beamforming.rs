@@ -2,13 +2,14 @@
 
 use crate::stft::FftProcessor;
 use crate::window::{Window, WindowType};
+use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
 /// Speed of sound in dry air at 20 degrees Celsius in meters/second.
 pub const SPEED_OF_SOUND: f32 = 343.0;
 
 /// 3D Spatial Cartesian Coordinate in meters.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Point3D {
     pub x: f32,
     pub y: f32,
