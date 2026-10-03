@@ -41,6 +41,7 @@ pub mod window;
 pub mod zero_shot;
 pub mod adaptation;
 pub mod subbyte;
+pub mod spiking_vad;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -127,5 +128,9 @@ pub use adaptation::{
 pub use subbyte::{
     LloydMaxTrainer, SubByteBitWidth, SubByteCodebook, SubByteDtwMatcher,
     SubBytePackedFrame, SubBytePhraseTemplate,
+};
+pub use spiking_vad::{
+    BandConfig, BiquadBandpassFilter, LifNeuron, LifNeuronConfig, SpikingNeuralVad,
+    SpikingVadConfig, SpikingVadTelemetry,
 };
 

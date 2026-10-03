@@ -576,3 +576,8 @@ impl SpikingKwsCell {
         self.total_spikes_processed
     }
 }
+
+pub use crate::spiking_vad::{
+    BandConfig, BiquadBandpassFilter, LifNeuron, LifNeuronConfig, SpikingNeuralVad,
+    SpikingVadConfig, SpikingVadTelemetry,
+};
