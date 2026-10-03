@@ -38,6 +38,7 @@ pub mod vad;
 pub mod wasm;
 pub mod wind;
 pub mod window;
+pub mod zero_shot;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -111,3 +112,8 @@ pub use wind::{
     WindNoiseTelemetry, WindTurbulenceConfig,
 };
 pub use window::{Window, WindowType};
+pub use zero_shot::{
+    CrossAttentionAligner, CrossAttentionResult, FoilType, MultiLingualG2p,
+    PhoneticEmbeddingSpace, PhoneticFoil, PhoneticFoilGenerator, SupportedLanguage,
+    ZeroShotCalibrationReport, ZeroShotCalibrator,
+};

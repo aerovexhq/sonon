@@ -295,7 +295,7 @@ fn test_multi_speaker_cocktail_party_interference_suppression() {
 #[test]
 fn test_mavlink_telemetry_packet_generation() {
     let report = sonon::tse::TseReport {
-        steered_azimuth_rad: 0.5236,   // ~30 deg
+        steered_azimuth_rad: std::f32::consts::FRAC_PI_6,   // ~30 deg
         steered_elevation_rad: -0.2618, // ~-15 deg
         target_rms: 0.125,
         interference_suppression_db: 18.5,

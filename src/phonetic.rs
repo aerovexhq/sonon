@@ -8,7 +8,7 @@ use std::f32::consts::PI;
 use std::path::Path;
 
 /// Standard ARPAbet phoneme representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phoneme {
     // Vowels
     AA, // father, odd
@@ -1419,6 +1419,56 @@ impl SyntheticExemplarGenerator {
             .into_iter()
             .map(|meta| meta.audio)
             .collect()
+    }
+
+    /// Generate `count` diverse synthetic audio exemplars directly from a custom sequence of phoneme segments.
+    pub fn generate_exemplars_from_segments(
+        &self,
+        segments: &[PhonemeSegment],
+        count: usize,
+    ) -> Vec<Vec<f32>> {
+        if count == 0 || segments.is_empty() {
+            return Vec::new();
+        }
+
+        let n_pitch = self.config.pitch_frequencies.len().max(1);
+        let n_speed = self.config.speaking_rates.len().max(1);
+        let n_scale = self.config.vocal_tract_scales.len().max(1);
+        let n_rd = self.config.glottal_rd_factors.len().max(1);
+        let n_breath = self.config.breathiness_levels.len().max(1);
+        let n_accent = self.config.accents.len().max(1);
+        let n_contour = self.config.contours.len().max(1);
+
+        let mut exemplars = Vec::with_capacity(count);
+
+        for i in 0..count {
+            let mut synth = KlattSynthesizer::new(self.sample_rate);
+            let f0 = self.config.pitch_frequencies[i % n_pitch];
+            let rate = self.config.speaking_rates[(i / n_pitch) % n_speed];
+            let scale = self.config.vocal_tract_scales[(i / (n_pitch * n_speed)) % n_scale];
+            let rd = self.config.glottal_rd_factors[(i / (n_pitch * n_speed * n_scale)) % n_rd];
+            let breath = self.config.breathiness_levels
+                [(i / (n_pitch * n_speed * n_scale * n_rd)) % n_breath];
+            let accent = self.config.accents
+                [(i / (n_pitch * n_speed * n_scale * n_rd * n_breath)) % n_accent];
+            let contour = self.config.contours
+                [(i / (n_pitch * n_speed * n_scale * n_rd * n_breath * n_accent)) % n_contour];
+
+            synth.set_f0(f0);
+            synth.set_speaking_rate(rate);
+            synth.set_vocal_tract_scale(scale);
+            synth.set_glottal_rd(rd);
+            synth.set_breathiness(breath);
+            synth.set_accent(accent);
+            synth.set_intonation_contour(contour);
+
+            let audio = synth.synthesize(segments);
+            if !audio.is_empty() {
+                exemplars.push(audio);
+            }
+        }
+
+        exemplars
     }
 }
 
