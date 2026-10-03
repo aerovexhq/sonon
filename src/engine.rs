@@ -1,5 +1,5 @@
 use crate::adaptation::{ActiveLearningCandidate, AdaptationTelemetry, ContinualAdaptationEngine};
-use crate::aec::{AcousticEchoCanceller, AecConfig};
+use crate::aec::{AcousticEchoCanceller, AecConfig, SubbandAec, SubbandAecConfig, SubbandAecTelemetry};
 use crate::aeroacoustics::{
     AeroacousticConfig, AeroacousticInverter, AeroacousticTelemetry, DirectivitySphere3D,
     GroundNoiseFootprint, RotorGeometry,
@@ -99,6 +99,7 @@ pub struct SononEngine {
     max_history_frames: usize,
     total_samples_processed: u64,
     aec: Option<AcousticEchoCanceller>,
+    subband_aec: Option<SubbandAec>,
     doppler: Option<DopplerCompensator>,
     tse: Option<TargetSoundExtractor>,
     latest_tse_report: Option<TseReport>,
@@ -186,6 +187,7 @@ impl SononEngine {
             max_history_frames: 64,
             total_samples_processed: 0,
             aec: None,
+            subband_aec: None,
             doppler: None,
             tse: None,
             latest_tse_report: None,
@@ -360,6 +362,31 @@ impl SononEngine {
     /// Access mutable reference to active Acoustic Echo Canceller if enabled.
     pub fn aec_mut(&mut self) -> Option<&mut AcousticEchoCanceller> {
         self.aec.as_mut()
+    }
+
+    /// Enable Subband Partitioned-Block Frequency-Domain Acoustic Echo Cancellation (PBFDAF).
+    pub fn enable_subband_aec(&mut self, config: SubbandAecConfig) {
+        self.subband_aec = Some(SubbandAec::new(config));
+    }
+
+    /// Disable Subband Acoustic Echo Cancellation.
+    pub fn disable_subband_aec(&mut self) {
+        self.subband_aec = None;
+    }
+
+    /// Access reference to active Subband Acoustic Echo Canceller if enabled.
+    pub fn subband_aec(&self) -> Option<&SubbandAec> {
+        self.subband_aec.as_ref()
+    }
+
+    /// Access mutable reference to active Subband Acoustic Echo Canceller if enabled.
+    pub fn subband_aec_mut(&mut self) -> Option<&mut SubbandAec> {
+        self.subband_aec.as_mut()
+    }
+
+    /// Return latest Subband AEC diagnostic telemetry snapshot if enabled.
+    pub fn latest_subband_aec_telemetry(&self) -> Option<SubbandAecTelemetry> {
+        self.subband_aec.as_ref().map(|a| a.telemetry())
     }
 
     /// Enable Doppler shift compensation and kinematic velocity frequency warping.
@@ -1593,7 +1620,10 @@ impl SononEngine {
         ref_samples: &[f32],
     ) -> Vec<KeywordEvent> {
         let mut clean_samples = vec![0.0f32; mic_samples.len()];
-        let effective_mic = if let Some(ref mut aec) = self.aec {
+        let effective_mic = if let Some(ref mut subband) = self.subband_aec {
+            subband.process_block(mic_samples, ref_samples, &mut clean_samples);
+            &clean_samples[..]
+        } else if let Some(ref mut aec) = self.aec {
             aec.process_block(mic_samples, ref_samples, &mut clean_samples);
             &clean_samples[..]
         } else {
@@ -1601,6 +1631,16 @@ impl SononEngine {
         };
 
         self.ingest_samples_internal(effective_mic)
+    }
+
+    /// Ingest full-duplex audio samples with simultaneous loudspeaker playback reference.
+    /// Cancels loudspeaker acoustic echo using Subband AEC / PBFDAF before keyword spotting.
+    pub fn ingest_samples_full_duplex(
+        &mut self,
+        mic_samples: &[f32],
+        ref_playback: &[f32],
+    ) -> Vec<KeywordEvent> {
+        self.ingest_samples_with_reference(mic_samples, ref_playback)
     }
 
     /// Ingest a slice of raw audio samples (mono float32 [-1.0, 1.0]).

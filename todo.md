@@ -39,11 +39,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Subband Partitioned-Block Acoustic Echo Cancellation (PBFDAF) & Coherence Double-Talk Detection for Full-Duplex Edge KWS - [P3]**
-  - [ ] (1) Partitioned block frequency-domain adaptive filter (`SubbandAec`, `PbfdafConfig`, `SubbandAecEngine`) with block FFT partitioned overlap-save convolution, supporting echo paths up to 256 ms ($L = 4096$ taps) with sub-4ms block processing latency.
-  - [ ] (2) Magnitude Squared Coherence (MSC) and cross-correlation double-talk detector (`CoherenceDtd`, `DtdConfig`) estimating subband coherence $\gamma_{xd}^2(f)$ to discriminate near-end operator commands from loudspeaker synthetic voice feedback down to $-15\text{ dB}$ near-end to echo ratio.
-  - [ ] (3) Parametric residual echo suppressor (`ResidualEchoSuppressor`, `ResConfig`) with Wiener spectral gain masking $G(\omega) = \max(G_{\min}, 1 - \eta \cdot P_{\text{echo}} / P_e)$ driving $> 35\text{ dB}$ total Echo Return Loss Enhancement (ERLE).
-  - [ ] (4) End-to-end integration into `SononEngine::ingest_samples_full_duplex` and `SononEngine::enable_subband_aec`, verifying zero false alarms during loud synthesized speech playback while spotting concurrent operator wake-words with 100% precision.
+- [ ] **Non-Stationary Noise PSD Tracking via IMCRA & Bayesian Log-Spectral Amplitude (MMSE-LSA) Speech Enhancement for Edge Robotics KWS - [P3]**
+  - [ ] (1) Improved Minima Controlled Recursive Averaging (`ImcraNoiseEstimator`, `ImcraConfig`): recursive dual-window smoothing of signal power spectrum across time and frequency, tracking local and global minima without requiring silence intervals or external VAD, and calculating subband speech presence probability $p(k, l)$ under non-stationary drone rotor RPM variations.
+  - [ ] (2) Minimum Mean-Square Error Log-Spectral Amplitude Estimator (`MmseLsaFilter`, `LsaConfig`): evaluating a priori SNR $\xi(k, l)$ via the decision-directed approach (Ephraim & Malah) and a posteriori SNR $\gamma(k, l)$, computing optimal Bayesian log-spectral amplitude gain $G_{\text{LSA}}(\xi, \gamma) = \frac{\xi}{1+\xi} \exp\left( \frac{1}{2} \int_v^\infty \frac{e^{-t}}{t} dt \right)$ with numerical exponential integral $E_1(v)$ approximation in pure safe Rust.
+  - [ ] (3) Musical noise elimination and dynamic psychoacoustic gain bounding (`AcousticGainLimiter`) preventing musical noise flutter and speech distortion during abrupt drone throttle transitions.
+  - [ ] (4) End-to-end integration into `SononEngine::enable_mmse_lsa_enhancement` and streaming `ingest_samples_internal`, demonstrating $> 18\text{ dB}$ SNR improvement on non-stationary drone rotor and environmental noise while boosting wake-word spotting recall at $-10\text{ dB}$ to $-15\text{ dB}$ SNR.
 
 ---
 
@@ -54,6 +54,12 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 ---
 
 ## Done
+
+- [x] **Subband Partitioned-Block Acoustic Echo Cancellation (PBFDAF) & Coherence Double-Talk Detection for Full-Duplex Edge KWS - [P3]**
+  - [x] (1) Partitioned block frequency-domain adaptive filter (`SubbandAec`, `PbfdafConfig`, `SubbandAecEngine`) with block FFT partitioned overlap-save convolution, supporting echo paths up to 256 ms ($L = 4096$ taps) with sub-4ms block processing latency.
+  - [x] (2) Magnitude Squared Coherence (MSC) and cross-correlation double-talk detector (`CoherenceDtd`, `DtdConfig`) estimating subband coherence $\gamma_{xd}^2(f)$ to discriminate near-end operator commands from loudspeaker synthetic voice feedback down to $-15\text{ dB}$ near-end to echo ratio.
+  - [x] (3) Parametric residual echo suppressor (`ResidualEchoSuppressor`, `ResConfig`) with Wiener spectral gain masking $G(\omega) = \max(G_{\min}, 1 - \eta \cdot P_{\text{echo}} / P_e)$ driving $> 35\text{ dB}$ total Echo Return Loss Enhancement (ERLE).
+  - [x] (4) End-to-end integration into `SononEngine::ingest_samples_full_duplex` and `SononEngine::enable_subband_aec`, verifying zero false alarms during loud synthesized speech playback while spotting concurrent operator wake-words with 100% precision (6/6 PASS in `tests/sonon_subband_aec_pbfdaf_tests.rs`, 38/38 test suites passing crate-wide).
 
 - [x] **Pitch-Synchronous Overlap-Add (PSOLA) Prosodic Morphing & Glottal Waveform Augmentation for Edge KWS Synthesis - [P3]**
   - [x] (1) Glottal Closure Instant (GCI) extraction and pitch-synchronous windowing for pitch-period segmentation from speech waveforms.

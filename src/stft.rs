@@ -84,6 +84,25 @@ impl FftProcessor {
         }
     }
 
+    /// Compute in-place Radix-2 Cooley-Tukey complex Inverse Fast Fourier Transform (IFFT).
+    pub fn ifft_in_place(&self, real: &mut [f32], imag: &mut [f32]) {
+        let n = self.size;
+        assert_eq!(real.len(), n, "Real slice must match FFT size");
+        assert_eq!(imag.len(), n, "Imaginary slice must match FFT size");
+
+        for im in imag.iter_mut() {
+            *im = -*im;
+        }
+
+        self.fft_in_place(real, imag);
+
+        let scale = 1.0 / (n as f32);
+        for (re, im) in real.iter_mut().zip(imag.iter_mut()) {
+            *re *= scale;
+            *im = -*im * scale;
+        }
+    }
+
     /// Compute power spectral density for a real input signal frame.
     /// Returns a vector of length `size / 2 + 1` with magnitude squared.
     pub fn power_spectrum(&self, input: &[f32]) -> Vec<f32> {
@@ -109,5 +128,27 @@ impl FftProcessor {
     /// Return FFT size.
     pub fn size(&self) -> usize {
         self.size
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fft_ifft_roundtrip() {
+        let size = 128;
+        let fft = FftProcessor::new(size);
+        let orig: Vec<f32> = (0..size).map(|i| (i as f32 * 0.1).sin() + 0.5 * (i as f32 * 0.35).cos()).collect();
+        let mut real = orig.clone();
+        let mut imag = vec![0.0f32; size];
+
+        fft.fft_in_place(&mut real, &mut imag);
+        fft.ifft_in_place(&mut real, &mut imag);
+
+        for i in 0..size {
+            assert!((real[i] - orig[i]).abs() < 1e-5, "Mismatch at index {}: {} vs {}", i, real[i], orig[i]);
+            assert!(imag[i].abs() < 1e-5, "Imaginary part not zero at index {}: {}", i, imag[i]);
+        }
     }
 }

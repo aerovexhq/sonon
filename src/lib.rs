@@ -47,7 +47,10 @@ pub mod voiceprint;
 pub mod ctc_beam_search;
 pub mod psola;
 
-pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
+pub use aec::{
+    AcousticEchoCanceller, AecConfig, CoherenceDtd, DtdConfig, DtdState, PbfdafConfig,
+    ResConfig, ResidualEchoSuppressor, SubbandAec, SubbandAecConfig, SubbandAecTelemetry,
+};
 pub use aeroacoustics::{
     a_weighting_db, bessel_j, AeroacousticConfig, AeroacousticInverter, AeroacousticTelemetry,
     DirectivitySphere3D, GroundNoiseFootprint, RotorGeometry,
