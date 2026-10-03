@@ -39,10 +39,10 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Speaker-Adaptive Voiceprint Conditioning & Anti-Spoofing Acoustic Verification for Edge KWS - [P3]**
-  - [ ] (1) Compact on-device speaker embedding extractor (`SpeakerVoiceprint`) from normalized acoustic feature trajectories.
-  - [ ] (2) Dual-threshold operator verification (wake-word DTW score + speaker voiceprint similarity) preventing unauthorized voice command injection.
-  - [ ] (3) Glottal acoustic anti-spoofing detector evaluating glottal waveform micro-tremor dynamics and replay artifacts.
+- [ ] **Continuous Phonetic CTC Beam Search & On-Device Language Model Rescoring for Multi-Word Robotics Commands - [P3]**
+  - [ ] (1) Prefix beam search decoder over continuous phonetic posteriorgrams with length normalization and repetitive token collapsing.
+  - [ ] (2) N-gram finite state transducer (FST) grammar rescorer constrained to flight and mission control command lexicons.
+  - [ ] (3) End-to-end integration into `SononEngine::recognize_command_stream` with latency < 20 ms.
 
 ---
 
@@ -54,6 +54,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Done
 
+- [x] **Speaker-Adaptive Voiceprint Conditioning & Anti-Spoofing Acoustic Verification for Edge KWS - [P3]**
+  - [x] (1) Compact on-device speaker embedding extractor (`SpeakerVoiceprint`) from normalized acoustic feature trajectories combining liftered vocal tract formant envelopes ($C_1 \dots C_{12}$) and glottal excitation source statistics ($F_0$, HNR) with composite source-filter cosine similarity ($S = 0.60 S_{\text{spec}} + 0.30 S_{\text{pitch}} + 0.10 S_{\text{hnr}}$) and multi-exemplar profile fusion.
+  - [x] (2) Dual-threshold operator verification (`OperatorVerifier`, `OperatorProfile`, `VerificationDecision`) gating detected wake-word DTW events against enrolled authorized speaker profiles.
+  - [x] (3) Glottal acoustic anti-spoofing detector (`GlottalAntiSpoofDetector`, `AntiSpoofConfig`, `AntiSpoofReport`) evaluating sub-200 Hz low-frequency glottal energy cutoff, cycle-to-cycle pitch period jitter ratio, and high-frequency transducer harmonic resonance distortion.
+  - [x] (4) End-to-end integration into `SononEngine` (`enable_operator_verification`, `enroll_authorized_operator`, streaming audio ring buffer cache, `KeywordEvent` verification metadata gating) verified in `tests/sonon_speaker_voiceprint_anti_spoof_tests.rs` (6/6 PASS, 35/35 test suites passing crate-wide).
 - [x] **Multi-Accent Dynamic Formant Adaptation via Active Articulatory Synthesis - [P3]**
   - [x] (1) Vocal tract length normalization (VTLN) frequency warping (`VtlnWarping`, `MelFilterbank::new_with_vtln`, `SononEngine::enable_vtln`) with piecewise-linear Nyquist boundary preservation and dynamic spectral centroid estimator (`VtlnWarpEstimator`).
   - [x] (2) Regional vocal accent expansion (`Australian`, `IndianEnglish`, `EastAsian`, `SpanishAccented`) with formant shifts and diphthong trajectory targets in `Phoneme::acoustic_targets_with_accent`.

@@ -43,6 +43,7 @@ pub mod adaptation;
 pub mod subbyte;
 pub mod spiking_vad;
 pub mod vtln;
+pub mod voiceprint;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -135,4 +136,8 @@ pub use spiking_vad::{
     SpikingVadConfig, SpikingVadTelemetry,
 };
 pub use vtln::{VtlnConfig, VtlnWarpEstimator, VtlnWarping};
+pub use voiceprint::{
+    AntiSpoofConfig, AntiSpoofReport, GlottalAntiSpoofDetector, OperatorProfile,
+    OperatorVerifier, SpeakerVoiceprint, VerificationDecision,
+};
 

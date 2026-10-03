@@ -32,6 +32,7 @@ use crate::swarm_mesh::{SwarmMeshConfig, SwarmNodeState, SwarmTargetReport, Synt
 use crate::tse::{GpsCoordinate, TargetSoundExtractor, TseConfig, TseReport};
 use crate::spiking_vad::{SpikingNeuralVad, SpikingVadConfig, SpikingVadTelemetry};
 use crate::vad::EnergyVad;
+use crate::voiceprint::{OperatorVerifier, SpeakerVoiceprint, VerificationDecision};
 use crate::wind::{TurbulentBoundaryLayerSuppressor, WindNoiseTelemetry, WindTurbulenceConfig};
 use crate::window::{Window, WindowType};
 use serde::{Deserialize, Serialize};
@@ -51,6 +52,23 @@ pub struct KeywordEvent {
     pub keyword: String,
     pub confidence: f32,
     pub timestamp_sec: f64,
+    pub authorized_operator: Option<String>,
+    pub voiceprint_similarity: Option<f32>,
+    pub is_anti_spoof_verified: bool,
+}
+
+impl KeywordEvent {
+    /// Construct a basic keyword event without operator authentication.
+    pub fn new(keyword: impl Into<String>, confidence: f32, timestamp_sec: f64) -> Self {
+        Self {
+            keyword: keyword.into(),
+            confidence,
+            timestamp_sec,
+            authorized_operator: None,
+            voiceprint_similarity: None,
+            is_anti_spoof_verified: false,
+        }
+    }
 }
 
 /// Unified streaming acoustic DSP engine for robotics edge systems.
@@ -111,6 +129,9 @@ pub struct SononEngine {
     latest_spiking_vad_telemetry: Option<SpikingVadTelemetry>,
     vtln_alpha: f32,
     cached_vtln_mel: Option<MelFilterbank>,
+    operator_verifier: Option<OperatorVerifier>,
+    latest_verification_decision: Option<VerificationDecision>,
+    rolling_audio_cache: AudioRingBuffer,
 }
 
 impl SononEngine {
@@ -127,6 +148,7 @@ impl SononEngine {
         );
 
         let ring_buffer = AudioRingBuffer::new(frame_size * 16);
+        let rolling_audio_cache = AudioRingBuffer::new(((sample_rate * 3.0) as usize).max(frame_size * 32));
         let window = Window::new(WindowType::Hann, frame_size);
         let fft = FftProcessor::new(frame_size);
         let num_mel_filters = 26;
@@ -192,6 +214,9 @@ impl SononEngine {
             latest_spiking_vad_telemetry: None,
             vtln_alpha: 1.0,
             cached_vtln_mel: None,
+            operator_verifier: None,
+            latest_verification_decision: None,
+            rolling_audio_cache,
         }
     }
 
@@ -1248,6 +1273,115 @@ impl SononEngine {
         Ok(report)
     }
 
+    /// Enable dual-threshold operator verification and anti-spoofing gating.
+    pub fn enable_operator_verification(&mut self, strict: bool) {
+        if let Some(ref mut verifier) = self.operator_verifier {
+            verifier.set_strict(strict);
+        } else {
+            self.operator_verifier = Some(OperatorVerifier::new(strict));
+        }
+    }
+
+    /// Disable operator verification gating.
+    pub fn disable_operator_verification(&mut self) {
+        self.operator_verifier = None;
+        self.latest_verification_decision = None;
+    }
+
+    /// Check whether operator verification is enabled.
+    pub fn is_operator_verification_enabled(&self) -> bool {
+        self.operator_verifier.is_some()
+    }
+
+    /// Enroll an authorized operator using one or more voice audio slices.
+    pub fn enroll_authorized_operator(
+        &mut self,
+        operator_id: impl Into<String>,
+        voice_audio_slices: &[&[f32]],
+        similarity_threshold: f32,
+    ) -> Result<SpeakerVoiceprint, String> {
+        if voice_audio_slices.is_empty() {
+            return Err("At least one voice audio slice required for enrollment".to_string());
+        }
+
+        let mut vps = Vec::with_capacity(voice_audio_slices.len());
+        for &slice in voice_audio_slices {
+            let feats = self.extract_features(slice);
+            if feats.is_empty() {
+                continue;
+            }
+            let vp = SpeakerVoiceprint::from_features_and_audio(&feats, slice, self.sample_rate)?;
+            vps.push(vp);
+        }
+
+        if vps.is_empty() {
+            return Err("Failed to extract voiceprint features from provided audio slices".to_string());
+        }
+
+        let fused = SpeakerVoiceprint::fuse_all(&vps)?;
+        let op_id = operator_id.into();
+
+        if let Some(ref mut verifier) = self.operator_verifier {
+            verifier.enroll_operator(op_id, fused.clone(), similarity_threshold);
+        } else {
+            let mut verifier = OperatorVerifier::new(true);
+            verifier.enroll_operator(op_id, fused.clone(), similarity_threshold);
+            self.operator_verifier = Some(verifier);
+        }
+
+        Ok(fused)
+    }
+
+    /// Remove an authorized operator by ID.
+    pub fn remove_authorized_operator(&mut self, operator_id: &str) -> bool {
+        if let Some(ref mut verifier) = self.operator_verifier {
+            verifier.remove_operator(operator_id)
+        } else {
+            false
+        }
+    }
+
+    /// Clear all enrolled authorized operators.
+    pub fn clear_authorized_operators(&mut self) {
+        if let Some(ref mut verifier) = self.operator_verifier {
+            verifier.clear_operators();
+        }
+    }
+
+    /// Return list of all enrolled operator IDs.
+    pub fn authorized_operators(&self) -> Vec<String> {
+        if let Some(ref verifier) = self.operator_verifier {
+            verifier.operators().iter().map(|op| op.operator_id.clone()).collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Access reference to active OperatorVerifier if enabled.
+    pub fn operator_verifier(&self) -> Option<&OperatorVerifier> {
+        self.operator_verifier.as_ref()
+    }
+
+    /// Access mutable reference to active OperatorVerifier if enabled.
+    pub fn operator_verifier_mut(&mut self) -> Option<&mut OperatorVerifier> {
+        self.operator_verifier.as_mut()
+    }
+
+    /// Access latest verification decision from streaming keyword spotting.
+    pub fn latest_verification_decision(&self) -> Option<&VerificationDecision> {
+        self.latest_verification_decision.as_ref()
+    }
+
+    /// Verify speaker voiceprint and glottal anti-spoofing on an arbitrary audio slice.
+    pub fn verify_speaker_audio(&self, audio_samples: &[f32]) -> Option<VerificationDecision> {
+        if let Some(ref verifier) = self.operator_verifier {
+            let feats = self.extract_features(audio_samples);
+            Some(verifier.verify(audio_samples, &feats, self.sample_rate))
+        } else {
+            None
+        }
+    }
+
     /// Access reference to active streaming DTW configuration.
     pub fn streaming_dtw_config(&self) -> &StreamingDtwConfig {
         &self.streaming_dtw_config
@@ -1410,6 +1544,7 @@ impl SononEngine {
             };
 
             self.ring_buffer.push_slice(chunk);
+            self.rolling_audio_cache.push_slice(chunk);
             self.total_samples_processed += chunk.len() as u64;
 
             while self.ring_buffer.len() >= self.frame_size {
@@ -1514,11 +1649,53 @@ impl SononEngine {
                     ) {
                         let timestamp_sec =
                             (self.total_samples_processed as f64) / (self.sample_rate as f64);
-                        events.push(KeywordEvent {
-                            keyword: res.keyword.clone(),
-                            confidence: res.confidence,
-                            timestamp_sec,
-                        });
+
+                        let mut is_authorized = true;
+                        let mut authorized_op = None;
+                        let mut voiceprint_sim = None;
+                        let mut anti_spoof_ok = false;
+
+                        if let Some(ref verifier) = self.operator_verifier {
+                            let num_audio_samples = (res.matched_frames * self.hop_size + self.frame_size)
+                                .min(self.rolling_audio_cache.len());
+                            let mut matched_audio = vec![0.0f32; num_audio_samples];
+                            if self.rolling_audio_cache.read_latest(num_audio_samples, &mut matched_audio) {
+                                let start_idx = self.feature_history.len().saturating_sub(res.matched_frames);
+                                let matched_features = &self.feature_history[start_idx..];
+                                let decision = verifier.verify(&matched_audio, matched_features, self.sample_rate);
+                                self.latest_verification_decision = Some(decision.clone());
+                                match decision {
+                                    VerificationDecision::Authorized { operator_id, similarity, .. } => {
+                                        is_authorized = true;
+                                        authorized_op = Some(operator_id);
+                                        voiceprint_sim = Some(similarity);
+                                        anti_spoof_ok = true;
+                                    }
+                                    VerificationDecision::RejectedUnauthorized { best_similarity, .. } => {
+                                        voiceprint_sim = Some(best_similarity);
+                                        if verifier.is_strict() {
+                                            is_authorized = false;
+                                        }
+                                    }
+                                    VerificationDecision::RejectedSpoof { .. } => {
+                                        if verifier.is_strict() {
+                                            is_authorized = false;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if is_authorized {
+                            events.push(KeywordEvent {
+                                keyword: res.keyword.clone(),
+                                confidence: res.confidence,
+                                timestamp_sec,
+                                authorized_operator: authorized_op,
+                                voiceprint_similarity: voiceprint_sim,
+                                is_anti_spoof_verified: anti_spoof_ok,
+                            });
+                        }
 
                         // Hook continual domain adaptation if active for this keyword
                         if let Some(ref mut adapt) = self.continual_adaptation {
@@ -1551,11 +1728,51 @@ impl SononEngine {
                             let timestamp_sec =
                                 (self.total_samples_processed as f64) / (self.sample_rate as f64);
                             let confidence = (1.0 / (1.0 + dist)).clamp(0.0, 1.0);
-                            events.push(KeywordEvent {
-                                keyword,
-                                confidence,
-                                timestamp_sec,
-                            });
+
+                            let mut is_authorized = true;
+                            let mut authorized_op = None;
+                            let mut voiceprint_sim = None;
+                            let mut anti_spoof_ok = false;
+
+                            if let Some(ref verifier) = self.operator_verifier {
+                                let num_audio_samples = (self.feature_history.len() * self.hop_size + self.frame_size)
+                                    .min(self.rolling_audio_cache.len());
+                                let mut matched_audio = vec![0.0f32; num_audio_samples];
+                                if self.rolling_audio_cache.read_latest(num_audio_samples, &mut matched_audio) {
+                                    let decision = verifier.verify(&matched_audio, &self.feature_history, self.sample_rate);
+                                    self.latest_verification_decision = Some(decision.clone());
+                                    match decision {
+                                        VerificationDecision::Authorized { operator_id, similarity, .. } => {
+                                            is_authorized = true;
+                                            authorized_op = Some(operator_id);
+                                            voiceprint_sim = Some(similarity);
+                                            anti_spoof_ok = true;
+                                        }
+                                        VerificationDecision::RejectedUnauthorized { best_similarity, .. } => {
+                                            voiceprint_sim = Some(best_similarity);
+                                            if verifier.is_strict() {
+                                                is_authorized = false;
+                                            }
+                                        }
+                                        VerificationDecision::RejectedSpoof { .. } => {
+                                            if verifier.is_strict() {
+                                                is_authorized = false;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if is_authorized {
+                                events.push(KeywordEvent {
+                                    keyword,
+                                    confidence,
+                                    timestamp_sec,
+                                    authorized_operator: authorized_op,
+                                    voiceprint_similarity: voiceprint_sim,
+                                    is_anti_spoof_verified: anti_spoof_ok,
+                                });
+                            }
                             self.refractory_lockout_remaining = self.streaming_dtw_config.refractory_frames;
                             self.feature_history.clear();
                             self.feature_ring_buffer.clear();
@@ -1741,6 +1958,8 @@ impl SononEngine {
         self.latest_adaptation_telemetry = None;
         self.cached_vtln_mel = None;
         self.vtln_alpha = 1.0;
+        self.rolling_audio_cache.clear();
+        self.latest_verification_decision = None;
         self.last_sample = 0.0;
         self.total_samples_processed = 0;
     }
