@@ -247,6 +247,9 @@ impl SononEngine {
         if let Some(ref mut cwt) = self.cwt_profiler {
             cwt.update_rpm(rpm);
         }
+        if let Some(ref mut extractor) = self.tse {
+            extractor.set_motor_rpms(&[rpm], 2);
+        }
     }
 
     /// Update multi-motor RPM telemetry (e.g., 4 motors on a quadcopter).
@@ -262,6 +265,9 @@ impl SononEngine {
             if let Some(&rpm0) = motor_rpms.first() {
                 cwt.update_rpm(rpm0);
             }
+        }
+        if let Some(ref mut extractor) = self.tse {
+            extractor.set_motor_rpms(motor_rpms, 2);
         }
     }
 
@@ -383,6 +389,27 @@ impl SononEngine {
     ) {
         if let Some(ref mut extractor) = self.tse {
             extractor.set_target_gps(drone_gps, operator_gps, drone_yaw_rad);
+        }
+    }
+
+    /// Configure motor null coordinates in the airframe body frame for the Target Sound Extractor.
+    pub fn set_tse_motor_null_positions(&mut self, motor_positions: &[Point3D]) {
+        if let Some(ref mut extractor) = self.tse {
+            extractor.set_motor_null_positions(motor_positions);
+        }
+    }
+
+    /// Configure explicit spatial null directions (azimuth_rad, elevation_rad) for the Target Sound Extractor.
+    pub fn set_tse_spatial_null_directions(&mut self, null_directions: &[(f32, f32)]) {
+        if let Some(ref mut extractor) = self.tse {
+            extractor.set_spatial_null_directions(null_directions);
+        }
+    }
+
+    /// Disable spatial null constraints in the Target Sound Extractor.
+    pub fn clear_tse_spatial_nulls(&mut self) {
+        if let Some(ref mut extractor) = self.tse {
+            extractor.clear_spatial_nulls();
         }
     }
 

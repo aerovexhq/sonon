@@ -102,8 +102,8 @@ pub use swarm_mesh::{
     SwarmNodeState, SwarmTargetReport, SyntheticApertureBeamformer,
 };
 pub use tse::{
-    calculate_bearing_from_gps, Complex32, GpsCoordinate, SpatialConditioningTarget,
-    TargetSoundExtractor, TseConfig, TseReport,
+    calculate_bearing_from_gps, Complex32, FlightDynamicsSimulator, GpsCoordinate,
+    SpatialConditioningTarget, TargetSoundExtractor, TseConfig, TseReport,
 };
 pub use vad::EnergyVad;
 pub use wind::{

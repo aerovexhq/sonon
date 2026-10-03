@@ -78,9 +78,9 @@ pub fn fast_log10(x: f32) -> f32 {
     let mantissa = f32::from_bits((bits & 0x007F_FFFF) | 0x3F80_0000);
     // Minimax polynomial approximation of log2(1 + m) for m in [0.0, 1.0)
     let m = mantissa - 1.0;
-    let log2_m = m * (1.442695 - m * (0.721347 - 0.278652 * m));
+    let log2_m = m * (std::f32::consts::LOG2_E - m * (0.721347 - 0.278652 * m));
     let log2_val = (exponent as f32) + log2_m;
-    log2_val * 0.30102999566
+    log2_val * std::f32::consts::LOG10_2
 }
 
 /// Evaluates Sound Pressure Level in dB SPL from normalized power.
