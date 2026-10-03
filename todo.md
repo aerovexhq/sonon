@@ -39,11 +39,11 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 
 ## Current
 
-- [ ] **Pitch-Synchronous Overlap-Add (PSOLA) Prosodic Morphing & Glottal Waveform Augmentation for Edge KWS Synthesis - [P3]**
-  - [ ] (1) Glottal Closure Instant (GCI) extraction and pitch-synchronous windowing for pitch-period segmentation from speech waveforms.
-  - [ ] (2) Time-domain PSOLA (TD-PSOLA) prosodic transformation enabling continuous tempo scaling ($0.5\times - 2.0\times$) and $F_0$ pitch shifting ($\pm 12$ semitones) with invariant spectral formant envelopes.
-  - [ ] (3) Multi-speaker prosodic ensemble synthesis pipeline generating diverse synthetic exemplar banks for DTW template fusion and zero-shot KWS calibration.
-  - [ ] (4) End-to-end integration into `SononEngine::enroll_keyword_augmented_synthesis` with automated noise margin verification and streaming KWS validation.
+- [ ] **Subband Partitioned-Block Acoustic Echo Cancellation (PBFDAF) & Coherence Double-Talk Detection for Full-Duplex Edge KWS - [P3]**
+  - [ ] (1) Partitioned block frequency-domain adaptive filter (`SubbandAec`, `PbfdafConfig`, `SubbandAecEngine`) with block FFT partitioned overlap-save convolution, supporting echo paths up to 256 ms ($L = 4096$ taps) with sub-4ms block processing latency.
+  - [ ] (2) Magnitude Squared Coherence (MSC) and cross-correlation double-talk detector (`CoherenceDtd`, `DtdConfig`) estimating subband coherence $\gamma_{xd}^2(f)$ to discriminate near-end operator commands from loudspeaker synthetic voice feedback down to $-15\text{ dB}$ near-end to echo ratio.
+  - [ ] (3) Parametric residual echo suppressor (`ResidualEchoSuppressor`, `ResConfig`) with Wiener spectral gain masking $G(\omega) = \max(G_{\min}, 1 - \eta \cdot P_{\text{echo}} / P_e)$ driving $> 35\text{ dB}$ total Echo Return Loss Enhancement (ERLE).
+  - [ ] (4) End-to-end integration into `SononEngine::ingest_samples_full_duplex` and `SononEngine::enable_subband_aec`, verifying zero false alarms during loud synthesized speech playback while spotting concurrent operator wake-words with 100% precision.
 
 ---
 
@@ -54,6 +54,12 @@ The ultimate objective of **Sonon** (`sonon` / `aerovexhq/sonon`) is an ultra-lo
 ---
 
 ## Done
+
+- [x] **Pitch-Synchronous Overlap-Add (PSOLA) Prosodic Morphing & Glottal Waveform Augmentation for Edge KWS Synthesis - [P3]**
+  - [x] (1) Glottal Closure Instant (GCI) extraction and pitch-synchronous windowing for pitch-period segmentation from speech waveforms.
+  - [x] (2) Time-domain PSOLA (TD-PSOLA) prosodic transformation enabling continuous tempo scaling ($0.5\times - 2.5\times$) and $F_0$ pitch shifting ($\pm 12$ semitones) with invariant spectral formant envelopes.
+  - [x] (3) Multi-speaker prosodic ensemble synthesis pipeline generating diverse synthetic exemplar banks for DTW template fusion and zero-shot KWS calibration.
+  - [x] (4) End-to-end integration into `SononEngine::enroll_keyword_augmented_synthesis` with automated noise margin verification and streaming KWS validation, verified across `tests/sonon_psola_prosody_augmentation_tests.rs` (6/6 PASS, 37/37 test suites passing crate-wide).
 
 - [x] **Continuous Phonetic CTC Beam Search & On-Device Language Model Rescoring for Multi-Word Robotics Commands - [P3]**
   - [x] (1) Extended 40-token CTC alphabet (39 ARPAbet phonemes + 1 Blank) and continuous acoustic posterior calculation with energy-gated speech activity and liftered $C_1 \dots C_{12}$ formant matching.
