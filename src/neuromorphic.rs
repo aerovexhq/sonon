@@ -519,11 +519,11 @@ impl SpikingKwsCell {
                     .saturating_add(self.config.coincidence_window_us);
 
                 let timestamp_sec = (event.timestamp_us as f64) / 1_000_000.0;
-                return Some(KeywordEvent {
-                    keyword: self.keyword_name.clone(),
-                    confidence: 0.96,
+                return Some(KeywordEvent::new(
+                    self.keyword_name.clone(),
+                    0.96,
                     timestamp_sec,
-                });
+                ));
             } else {
                 self.current_state_idx += 1;
             }
