@@ -19,7 +19,10 @@ use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
 use crate::phonetic::{G2pEngine, KlattSynthesizer, SyntheticExemplarGenerator, VocalAccent};
 use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
-use crate::zero_shot::{SupportedLanguage, ZeroShotCalibrationReport, ZeroShotCalibrator};
+use crate::zero_shot::{
+    CrossAccentCalibrationReport, MultiAccentCalibrator, SupportedLanguage,
+    ZeroShotCalibrationReport, ZeroShotCalibrator,
+};
 use crate::riscv_pulp::{PulpConfig, PulpPowerModel, PulpTelemetry};
 use crate::ring_buffer::{AudioRingBuffer, FeatureRingBuffer};
 use crate::spectral_subtraction::{SpectralSubtractionConfig, SpectralSubtractionSuppressor};
@@ -106,6 +109,8 @@ pub struct SononEngine {
     spiking_vad: Option<SpikingNeuralVad>,
     spiking_vad_gating: bool,
     latest_spiking_vad_telemetry: Option<SpikingVadTelemetry>,
+    vtln_alpha: f32,
+    cached_vtln_mel: Option<MelFilterbank>,
 }
 
 impl SononEngine {
@@ -185,6 +190,8 @@ impl SononEngine {
             spiking_vad: None,
             spiking_vad_gating: true,
             latest_spiking_vad_telemetry: None,
+            vtln_alpha: 1.0,
+            cached_vtln_mel: None,
         }
     }
 
@@ -356,6 +363,39 @@ impl SononEngine {
         if let Some(ref mut d) = self.doppler {
             d.update_velocity_3d(vx, vy, vz);
         }
+    }
+
+    /// Enable Vocal Tract Length Normalization (VTLN) frequency warping with warping factor alpha.
+    /// Warping factor $\alpha \in [0.70, 1.40]$ normalizes vocal tract length variations across
+    /// speakers ($\alpha > 1.0$ compresses high formant frequencies for shorter vocal tracts,
+    /// $\alpha < 1.0$ expands lower formant frequencies for longer vocal tracts).
+    pub fn enable_vtln(&mut self, alpha: f32) {
+        let alpha_clamped = alpha.clamp(0.51, 1.99);
+        self.vtln_alpha = alpha_clamped;
+        self.cached_vtln_mel = Some(MelFilterbank::new_with_vtln(
+            self.num_mel_filters,
+            self.frame_size,
+            self.sample_rate,
+            80.0,
+            self.sample_rate / 2.0,
+            alpha_clamped,
+        ));
+    }
+
+    /// Disable Vocal Tract Length Normalization (VTLN).
+    pub fn disable_vtln(&mut self) {
+        self.vtln_alpha = 1.0;
+        self.cached_vtln_mel = None;
+    }
+
+    /// Check whether Vocal Tract Length Normalization (VTLN) is active.
+    pub fn is_vtln_active(&self) -> bool {
+        self.cached_vtln_mel.is_some()
+    }
+
+    /// Current VTLN frequency warping factor alpha.
+    pub fn vtln_alpha(&self) -> f32 {
+        self.vtln_alpha
     }
 
     /// Enable Acoustic Directional Target Sound Extraction (TSE) with steered MVDR and spatial gating.
@@ -1173,6 +1213,41 @@ impl SononEngine {
         Ok(report)
     }
 
+    /// Enroll a keyword phrase with multi-accent active articulatory synthesis and joint threshold calibration.
+    pub fn enroll_keyword_multi_accent(
+        &mut self,
+        name: impl Into<String>,
+        phrase: &str,
+        language: SupportedLanguage,
+        accents: &[VocalAccent],
+    ) -> Result<CrossAccentCalibrationReport, String> {
+        let name_str = name.into();
+        let calibrator = MultiAccentCalibrator::new();
+        let (reference_template, report) = calibrator.calibrate(phrase, language, accents, self)?;
+
+        self.max_history_frames = self.max_history_frames.max(reference_template.len() + 32);
+        self.enroll_keyword_banded(
+            name_str,
+            reference_template,
+            report.calibrated_threshold,
+            8,
+        );
+
+        Ok(report)
+    }
+
+    /// Evaluate multi-accent calibration report for a keyword phrase across specified accents.
+    pub fn evaluate_multi_accent_discrimination(
+        &self,
+        phrase: &str,
+        language: SupportedLanguage,
+        accents: &[VocalAccent],
+    ) -> Result<CrossAccentCalibrationReport, String> {
+        let calibrator = MultiAccentCalibrator::new();
+        let (_, report) = calibrator.calibrate(phrase, language, accents, self)?;
+        Ok(report)
+    }
+
     /// Access reference to active streaming DTW configuration.
     pub fn streaming_dtw_config(&self) -> &StreamingDtwConfig {
         &self.streaming_dtw_config
@@ -1394,7 +1469,9 @@ impl SononEngine {
                     ss.process_spectrum(&mut power, is_speech);
                 }
 
-                let active_mel = if let Some(ref d) = self.doppler {
+                let active_mel = if let Some(ref vtln_mel) = self.cached_vtln_mel {
+                    vtln_mel
+                } else if let Some(ref d) = self.doppler {
                     d.cached_filterbank()
                 } else {
                     &self.mel
@@ -1511,6 +1588,27 @@ impl SononEngine {
 
     /// Compute feature frames directly for an input audio slice (useful for template generation).
     pub fn extract_features(&self, samples: &[f32]) -> Vec<Vec<f32>> {
+        self.extract_features_with_mel(samples, None)
+    }
+
+    /// Compute feature frames directly for an input audio slice using an explicit VTLN warping factor alpha.
+    pub fn extract_features_with_vtln(&self, samples: &[f32], alpha: f32) -> Vec<Vec<f32>> {
+        let vtln_mel = MelFilterbank::new_with_vtln(
+            self.num_mel_filters,
+            self.frame_size,
+            self.sample_rate,
+            80.0,
+            self.sample_rate / 2.0,
+            alpha.clamp(0.51, 1.99),
+        );
+        self.extract_features_with_mel(samples, Some(&vtln_mel))
+    }
+
+    fn extract_features_with_mel(
+        &self,
+        samples: &[f32],
+        mel_override: Option<&MelFilterbank>,
+    ) -> Vec<Vec<f32>> {
         let mut features = Vec::new();
         if samples.len() < self.frame_size {
             return features;
@@ -1568,7 +1666,11 @@ impl SononEngine {
                 ss.process_spectrum(&mut power, true);
             }
 
-            let active_mel = if let Some(ref d) = self.doppler {
+            let active_mel = if let Some(m) = mel_override {
+                m
+            } else if let Some(ref vtln_mel) = self.cached_vtln_mel {
+                vtln_mel
+            } else if let Some(ref d) = self.doppler {
                 d.cached_filterbank()
             } else {
                 &self.mel
@@ -1637,6 +1739,8 @@ impl SononEngine {
         self.feature_history.clear();
         self.noise_tracker.reset();
         self.latest_adaptation_telemetry = None;
+        self.cached_vtln_mel = None;
+        self.vtln_alpha = 1.0;
         self.last_sample = 0.0;
         self.total_samples_processed = 0;
     }

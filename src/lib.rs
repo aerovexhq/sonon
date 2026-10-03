@@ -42,6 +42,7 @@ pub mod zero_shot;
 pub mod adaptation;
 pub mod subbyte;
 pub mod spiking_vad;
+pub mod vtln;
 
 pub use aec::{AcousticEchoCanceller, AecConfig, DtdState};
 pub use aeroacoustics::{
@@ -116,9 +117,9 @@ pub use wind::{
 };
 pub use window::{Window, WindowType};
 pub use zero_shot::{
-    CrossAttentionAligner, CrossAttentionResult, FoilType, MultiLingualG2p,
-    PhoneticEmbeddingSpace, PhoneticFoil, PhoneticFoilGenerator, SupportedLanguage,
-    ZeroShotCalibrationReport, ZeroShotCalibrator,
+    CrossAccentCalibrationReport, CrossAttentionAligner, CrossAttentionResult, FoilType,
+    MultiAccentCalibrator, MultiLingualG2p, PhoneticEmbeddingSpace, PhoneticFoil,
+    PhoneticFoilGenerator, SupportedLanguage, ZeroShotCalibrationReport, ZeroShotCalibrator,
 };
 pub use adaptation::{
     AcousticExemplar, ActiveLearningCandidate, ActiveLearningConfig, ActiveLearningTrigger,
@@ -133,4 +134,5 @@ pub use spiking_vad::{
     BandConfig, BiquadBandpassFilter, LifNeuron, LifNeuronConfig, SpikingNeuralVad,
     SpikingVadConfig, SpikingVadTelemetry,
 };
+pub use vtln::{VtlnConfig, VtlnWarpEstimator, VtlnWarping};
 
