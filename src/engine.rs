@@ -17,6 +17,7 @@ use crate::dtw::{
     QuantizedPhraseTemplate, StreamingDtwConfig,
 };
 use crate::flow_matching::{CfmConfig, CfmSpeechSynthesizer, FlowSolverScheme};
+use crate::vocoder::{BigVganVocoder, VocoderConfig};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -155,6 +156,7 @@ pub struct SononEngine {
     audio_inspector: Option<AudioSignalInspector>,
     forced_aligner: Option<CtcForcedAligner>,
     cfm_synthesizer: Option<CfmSpeechSynthesizer>,
+    neural_vocoder: Option<BigVganVocoder>,
 }
 
 impl SononEngine {
@@ -250,6 +252,7 @@ impl SononEngine {
             audio_inspector: None,
             forced_aligner: None,
             cfm_synthesizer: None,
+            neural_vocoder: None,
         }
     }
 
@@ -2521,6 +2524,49 @@ impl SononEngine {
             Some(synth) => Ok(synth.synthesize_latent(text, speaker_ref, num_steps, scheme)),
             None => Err("CFM speech synthesizer is not enabled".to_string()),
         }
+    }
+
+    /// Enable Universal BigVGAN-v2 neural vocoder.
+    pub fn enable_neural_vocoder(&mut self, config: VocoderConfig) {
+        self.neural_vocoder = Some(BigVganVocoder::new(config));
+    }
+
+    /// Disable neural vocoder.
+    pub fn disable_neural_vocoder(&mut self) {
+        self.neural_vocoder = None;
+    }
+
+    /// Access reference to active BigVGAN vocoder if configured.
+    pub fn neural_vocoder(&self) -> Option<&BigVganVocoder> {
+        self.neural_vocoder.as_ref()
+    }
+
+    /// Access mutable reference to active BigVGAN vocoder if configured.
+    pub fn neural_vocoder_mut(&mut self) -> Option<&mut BigVganVocoder> {
+        self.neural_vocoder.as_mut()
+    }
+
+    /// Synthesize continuous audio waveform from acoustic Mel frames using neural vocoder.
+    pub fn synthesize_waveform_from_mel(&self, mel_frames: &[Vec<f32>]) -> Result<Vec<f32>, String> {
+        match &self.neural_vocoder {
+            Some(vocoder) => Ok(vocoder.synthesize_waveform(mel_frames)),
+            None => Err("Neural vocoder is not enabled".to_string()),
+        }
+    }
+
+    /// Full end-to-end text-to-waveform speech audio generation.
+    ///
+    /// Generates Mel acoustic latent frames from text using Flow Matching DiT,
+    /// then synthesizes high-fidelity audio PCM waveform using BigVGAN vocoder.
+    pub fn synthesize_speech_audio(
+        &self,
+        text: &str,
+        speaker_ref: Option<&[f32]>,
+        num_flow_steps: usize,
+        scheme: FlowSolverScheme,
+    ) -> Result<Vec<f32>, String> {
+        let mel_frames = self.synthesize_speech_latent(text, speaker_ref, num_flow_steps, scheme)?;
+        self.synthesize_waveform_from_mel(&mel_frames)
     }
 }
 

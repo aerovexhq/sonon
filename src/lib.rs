@@ -50,6 +50,15 @@ pub mod mmse_lsa;
 pub mod conformal;
 pub mod dataset_ingest;
 pub mod flow_matching;
+pub mod vocoder;
+
+pub use vocoder::{
+    bessel_i0, kaiser_window, normalized_sinc, snake_beta_scalar, AntiAliasedAmpBlock,
+    BigVganVocoder, Conv1d, ConvTranspose1d, KaiserLowPassFilter, MultiPeriodDiscriminator,
+    MultiPeriodOutput, MultiResolutionStftDiscriminator, MultiResolutionStftOutput,
+    PeriodDiscriminator, PeriodDiscriminatorOutput, SnakeBeta, UpsampleStage, VocoderConfig,
+    VocoderLossEvaluator, VocoderLossReport,
+};
 
 pub use flow_matching::{
     AdaLayerNormZero, CfmConfig, CfmSpeechSynthesizer, CrossAttention, DeterministicRng,
