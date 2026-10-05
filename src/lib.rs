@@ -47,6 +47,11 @@ pub mod voiceprint;
 pub mod ctc_beam_search;
 pub mod psola;
 pub mod mmse_lsa;
+pub mod conformal;
+
+pub use conformal::{
+    ConformalCalibrationReport, ConformalConfig, ConformalKwsPredictor, ConformalPredictionSet,
+};
 
 pub use mmse_lsa::{
     compute_lsa_gain, exponential_integral_e1, ImcraConfig, ImcraNoiseEstimator, LsaConfig,

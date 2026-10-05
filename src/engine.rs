@@ -6,6 +6,7 @@ use crate::aeroacoustics::{
 };
 use crate::beamforming::{ArrayGeometry, Point3D};
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
+use crate::conformal::{ConformalCalibrationReport, ConformalConfig, ConformalKwsPredictor};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::{
     AcousticNoiseClusterTracker, ConfusionMatrix, DtwMatcher, QuantizedDtwMatcher,
@@ -58,6 +59,8 @@ pub struct KeywordEvent {
     pub authorized_operator: Option<String>,
     pub voiceprint_similarity: Option<f32>,
     pub is_anti_spoof_verified: bool,
+    pub conformal_p_value: Option<f32>,
+    pub is_conformal_verified: bool,
 }
 
 impl KeywordEvent {
@@ -70,6 +73,8 @@ impl KeywordEvent {
             authorized_operator: None,
             voiceprint_similarity: None,
             is_anti_spoof_verified: false,
+            conformal_p_value: None,
+            is_conformal_verified: false,
         }
     }
 }
@@ -140,6 +145,8 @@ pub struct SononEngine {
     rolling_audio_cache: AudioRingBuffer,
     ctc_decoder: Option<CtcCommandDecoder>,
     latest_recognized_command: Option<CommandRecognitionResult>,
+    conformal_predictor: Option<ConformalKwsPredictor>,
+    conformal_gating: bool,
 }
 
 impl SononEngine {
@@ -230,6 +237,8 @@ impl SononEngine {
             rolling_audio_cache,
             ctc_decoder: None,
             latest_recognized_command: None,
+            conformal_predictor: None,
+            conformal_gating: false,
         }
     }
 
@@ -1885,6 +1894,18 @@ impl SononEngine {
                             }
                         }
 
+                        let mut conformal_p = None;
+                        let mut conformal_ok = true;
+                        if let Some(ref conf) = self.conformal_predictor {
+                            if conf.calibrated_count() > 0 {
+                                conformal_p = Some(conf.compute_p_value(&res.keyword, res.distance));
+                                conformal_ok = conf.is_verified_detection(&res.keyword, res.distance);
+                                if self.conformal_gating && !conformal_ok {
+                                    is_authorized = false;
+                                }
+                            }
+                        }
+
                         if is_authorized {
                             events.push(KeywordEvent {
                                 keyword: res.keyword.clone(),
@@ -1893,6 +1914,8 @@ impl SononEngine {
                                 authorized_operator: authorized_op,
                                 voiceprint_similarity: voiceprint_sim,
                                 is_anti_spoof_verified: anti_spoof_ok,
+                                conformal_p_value: conformal_p,
+                                is_conformal_verified: conformal_ok,
                             });
                         }
 
@@ -1962,6 +1985,18 @@ impl SononEngine {
                                 }
                             }
 
+                            let mut conformal_p = None;
+                            let mut conformal_ok = true;
+                            if let Some(ref conf) = self.conformal_predictor {
+                                if conf.calibrated_count() > 0 {
+                                    conformal_p = Some(conf.compute_p_value(&keyword, dist));
+                                    conformal_ok = conf.is_verified_detection(&keyword, dist);
+                                    if self.conformal_gating && !conformal_ok {
+                                        is_authorized = false;
+                                    }
+                                }
+                            }
+
                             if is_authorized {
                                 events.push(KeywordEvent {
                                     keyword,
@@ -1970,6 +2005,8 @@ impl SononEngine {
                                     authorized_operator: authorized_op,
                                     voiceprint_similarity: voiceprint_sim,
                                     is_anti_spoof_verified: anti_spoof_ok,
+                                    conformal_p_value: conformal_p,
+                                    is_conformal_verified: conformal_ok,
                                 });
                             }
                             self.refractory_lockout_remaining = self.streaming_dtw_config.refractory_frames;
@@ -2266,6 +2303,88 @@ impl SononEngine {
             mean_negative_distance: mean_neg,
             discrimination_margin: mean_neg - mean_pos,
         }
+    }
+
+    /// Enable Distribution-Free Conformal Prediction bounds on wake-word recognition.
+    pub fn enable_conformal_guarantees(&mut self, config: ConformalConfig) {
+        self.conformal_predictor = Some(ConformalKwsPredictor::new(config));
+    }
+
+    /// Disable Conformal Prediction guarantees.
+    pub fn disable_conformal_guarantees(&mut self) {
+        self.conformal_predictor = None;
+    }
+
+    /// Set whether conformal verification strictly gates keyword emission.
+    /// If true, wake-word events are emitted only if `is_conformal_verified` is true.
+    pub fn set_conformal_gating(&mut self, enabled: bool) {
+        self.conformal_gating = enabled;
+    }
+
+    /// Access reference to conformal KWS predictor if enabled.
+    pub fn conformal_predictor(&self) -> Option<&ConformalKwsPredictor> {
+        self.conformal_predictor.as_ref()
+    }
+
+    /// Access mutable reference to conformal KWS predictor if enabled.
+    pub fn conformal_predictor_mut(&mut self) -> Option<&mut ConformalKwsPredictor> {
+        self.conformal_predictor.as_mut()
+    }
+
+    /// Calibrate conformal finite-sample risk bounds for a registered keyword using positive and negative foil audio utterances.
+    pub fn calibrate_keyword_conformal(
+        &mut self,
+        keyword: &str,
+        positive_utterances: &[Vec<f32>],
+        foil_utterances: &[Vec<f32>],
+    ) -> Result<ConformalCalibrationReport, String> {
+        let template = self
+            .dtw
+            .templates()
+            .iter()
+            .find(|t| t.name == keyword)
+            .ok_or_else(|| format!("Keyword '{}' not enrolled in DTW templates", keyword))?
+            .clone();
+
+        let mut pos_dists = Vec::with_capacity(positive_utterances.len());
+        for pos in positive_utterances {
+            let feats = self.extract_features(pos);
+            let dist = DtwMatcher::compute_distance_banded(&feats, &template.features, template.band_radius);
+            if dist.is_finite() {
+                pos_dists.push(dist);
+            }
+        }
+
+        let mut foil_dists = Vec::with_capacity(foil_utterances.len());
+        for foil in foil_utterances {
+            let feats = self.extract_features(foil);
+            let dist = DtwMatcher::compute_distance_banded(&feats, &template.features, template.band_radius);
+            if dist.is_finite() {
+                foil_dists.push(dist);
+            }
+        }
+
+        let predictor = self
+            .conformal_predictor
+            .as_mut()
+            .ok_or_else(|| "Conformal predictor is not enabled. Call enable_conformal_guarantees first.".to_string())?;
+
+        predictor.calibrate(keyword, &pos_dists, &foil_dists)
+    }
+
+    /// Calibrate conformal finite-sample risk bounds directly using precomputed distance metrics.
+    pub fn calibrate_distances_conformal(
+        &mut self,
+        keyword: &str,
+        positive_distances: &[f32],
+        foil_distances: &[f32],
+    ) -> Result<ConformalCalibrationReport, String> {
+        let predictor = self
+            .conformal_predictor
+            .as_mut()
+            .ok_or_else(|| "Conformal predictor is not enabled. Call enable_conformal_guarantees first.".to_string())?;
+
+        predictor.calibrate(keyword, positive_distances, foil_distances)
     }
 }
 
