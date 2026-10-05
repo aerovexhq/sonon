@@ -49,6 +49,14 @@ pub mod psola;
 pub mod mmse_lsa;
 pub mod conformal;
 pub mod dataset_ingest;
+pub mod flow_matching;
+
+pub use flow_matching::{
+    AdaLayerNormZero, CfmConfig, CfmSpeechSynthesizer, CrossAttention, DeterministicRng,
+    DiTBlock, FeedForwardNetwork, FlowConditioning, FlowMatchingDiT, FlowOdeSolver,
+    FlowSolverScheme, MultiHeadAttention, OptimalTransportPath, SpeakerPromptEmbedding,
+    TextConditioningEncoder, TimestepEmbedding,
+};
 
 pub use dataset_ingest::{
     AlignedPhonemeSegment, AlignedWordSegment, AudioQualityConfig, AudioQualityReport,

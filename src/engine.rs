@@ -16,6 +16,7 @@ use crate::dtw::{
     AcousticNoiseClusterTracker, ConfusionMatrix, DtwMatcher, QuantizedDtwMatcher,
     QuantizedPhraseTemplate, StreamingDtwConfig,
 };
+use crate::flow_matching::{CfmConfig, CfmSpeechSynthesizer, FlowSolverScheme};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -153,6 +154,7 @@ pub struct SononEngine {
     conformal_gating: bool,
     audio_inspector: Option<AudioSignalInspector>,
     forced_aligner: Option<CtcForcedAligner>,
+    cfm_synthesizer: Option<CfmSpeechSynthesizer>,
 }
 
 impl SononEngine {
@@ -247,6 +249,7 @@ impl SononEngine {
             conformal_gating: false,
             audio_inspector: None,
             forced_aligner: None,
+            cfm_synthesizer: None,
         }
     }
 
@@ -2484,6 +2487,40 @@ impl SononEngine {
         }
 
         Ok((quality, alignment))
+    }
+
+    /// Enable Conditional Flow Matching (CFM) Diffusion Transformer speech synthesizer.
+    pub fn enable_cfm_synthesizer(&mut self, config: CfmConfig) {
+        self.cfm_synthesizer = Some(CfmSpeechSynthesizer::new(config));
+    }
+
+    /// Disable Conditional Flow Matching synthesizer.
+    pub fn disable_cfm_synthesizer(&mut self) {
+        self.cfm_synthesizer = None;
+    }
+
+    /// Access reference to active CFM speech synthesizer if configured.
+    pub fn cfm_synthesizer(&self) -> Option<&CfmSpeechSynthesizer> {
+        self.cfm_synthesizer.as_ref()
+    }
+
+    /// Access mutable reference to active CFM speech synthesizer if configured.
+    pub fn cfm_synthesizer_mut(&mut self) -> Option<&mut CfmSpeechSynthesizer> {
+        self.cfm_synthesizer.as_mut()
+    }
+
+    /// Synthesize acoustic speech latent frames using Conditional Flow Matching DiT.
+    pub fn synthesize_speech_latent(
+        &self,
+        text: &str,
+        speaker_ref: Option<&[f32]>,
+        num_steps: usize,
+        scheme: FlowSolverScheme,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        match &self.cfm_synthesizer {
+            Some(synth) => Ok(synth.synthesize_latent(text, speaker_ref, num_steps, scheme)),
+            None => Err("CFM speech synthesizer is not enabled".to_string()),
+        }
     }
 }
 
