@@ -48,6 +48,13 @@ pub mod ctc_beam_search;
 pub mod psola;
 pub mod mmse_lsa;
 pub mod conformal;
+pub mod dataset_ingest;
+
+pub use dataset_ingest::{
+    AlignedPhonemeSegment, AlignedWordSegment, AudioQualityConfig, AudioQualityReport,
+    AudioSignalInspector, CtcForcedAligner, DatasetSample, DatasetShardReader,
+    DatasetShardWriter, PhoneticAlignmentReport,
+};
 
 pub use conformal::{
     ConformalCalibrationReport, ConformalConfig, ConformalKwsPredictor, ConformalPredictionSet,

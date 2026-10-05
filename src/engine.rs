@@ -7,6 +7,10 @@ use crate::aeroacoustics::{
 use crate::beamforming::{ArrayGeometry, Point3D};
 use crate::cwt::{CwtProfilerConfig, RotorDamageProfiler, RotorDamageReport};
 use crate::conformal::{ConformalCalibrationReport, ConformalConfig, ConformalKwsPredictor};
+use crate::dataset_ingest::{
+    AudioQualityConfig, AudioQualityReport, AudioSignalInspector, CtcForcedAligner, DatasetSample,
+    PhoneticAlignmentReport,
+};
 use crate::doppler::{DopplerCompensator, DopplerConfig};
 use crate::dtw::{
     AcousticNoiseClusterTracker, ConfusionMatrix, DtwMatcher, QuantizedDtwMatcher,
@@ -147,6 +151,8 @@ pub struct SononEngine {
     latest_recognized_command: Option<CommandRecognitionResult>,
     conformal_predictor: Option<ConformalKwsPredictor>,
     conformal_gating: bool,
+    audio_inspector: Option<AudioSignalInspector>,
+    forced_aligner: Option<CtcForcedAligner>,
 }
 
 impl SononEngine {
@@ -239,6 +245,8 @@ impl SononEngine {
             latest_recognized_command: None,
             conformal_predictor: None,
             conformal_gating: false,
+            audio_inspector: None,
+            forced_aligner: None,
         }
     }
 
@@ -2385,6 +2393,97 @@ impl SononEngine {
             .ok_or_else(|| "Conformal predictor is not enabled. Call enable_conformal_guarantees first.".to_string())?;
 
         predictor.calibrate(keyword, positive_distances, foil_distances)
+    }
+
+    /// Enable automated digital audio quality inspection and restoration.
+    pub fn enable_audio_quality_gating(&mut self, config: AudioQualityConfig) {
+        self.audio_inspector = Some(AudioSignalInspector::new(self.sample_rate, config));
+    }
+
+    /// Disable audio quality gating.
+    pub fn disable_audio_quality_gating(&mut self) {
+        self.audio_inspector = None;
+    }
+
+    /// Access reference to active audio quality inspector if enabled.
+    pub fn audio_inspector(&self) -> Option<&AudioSignalInspector> {
+        self.audio_inspector.as_ref()
+    }
+
+    /// Enable phonetic CTC Viterbi forced alignment engine.
+    pub fn enable_forced_aligner(&mut self) {
+        self.forced_aligner = Some(CtcForcedAligner::new(self.sample_rate));
+    }
+
+    /// Disable phonetic CTC forced aligner.
+    pub fn disable_forced_aligner(&mut self) {
+        self.forced_aligner = None;
+    }
+
+    /// Access reference to active forced aligner if enabled.
+    pub fn forced_aligner(&self) -> Option<&CtcForcedAligner> {
+        self.forced_aligner.as_ref()
+    }
+
+    /// Inspect an audio waveform and generate a detailed non-intrusive quality report.
+    pub fn inspect_audio_quality(&self, samples: &[f32]) -> AudioQualityReport {
+        if let Some(ref inspector) = self.audio_inspector {
+            inspector.inspect(samples)
+        } else {
+            let default_inspector = AudioSignalInspector::new(self.sample_rate, AudioQualityConfig::default());
+            default_inspector.inspect(samples)
+        }
+    }
+
+    /// Clean input audio by applying DC removal and peak normalization.
+    pub fn clean_audio_signal(&self, samples: &[f32]) -> Vec<f32> {
+        if let Some(ref inspector) = self.audio_inspector {
+            inspector.clean_audio(samples)
+        } else {
+            let default_inspector = AudioSignalInspector::new(self.sample_rate, AudioQualityConfig::default());
+            default_inspector.clean_audio(samples)
+        }
+    }
+
+    /// Force-align an audio waveform against a target text transcript,
+    /// returning millisecond-level word and phoneme boundary timestamps.
+    pub fn align_speech_transcript(
+        &self,
+        samples: &[f32],
+        transcript: &str,
+    ) -> Result<PhoneticAlignmentReport, String> {
+        if let Some(ref aligner) = self.forced_aligner {
+            aligner.align(samples, transcript)
+        } else {
+            let default_aligner = CtcForcedAligner::new(self.sample_rate);
+            default_aligner.align(samples, transcript)
+        }
+    }
+
+    /// Ingest and validate a curated dataset sample: cleans the waveform, inspects quality metrics,
+    /// and performs phonetic forced alignment against the transcript.
+    pub fn ingest_curated_sample(
+        &mut self,
+        sample: &DatasetSample,
+    ) -> Result<(AudioQualityReport, PhoneticAlignmentReport), String> {
+        let quality = self.inspect_audio_quality(&sample.audio);
+        if !quality.is_acceptable {
+            return Err(format!(
+                "Sample '{}' failed quality gating: SNR = {:.1} dB, clipping = {:.3}%, crest = {:.2}",
+                sample.sample_id, quality.snr_db, quality.clipping_ratio * 100.0, quality.crest_factor
+            ));
+        }
+
+        let cleaned = self.clean_audio_signal(&sample.audio);
+        let alignment = self.align_speech_transcript(&cleaned, &sample.transcript)?;
+        if !alignment.is_valid_alignment {
+            return Err(format!(
+                "Sample '{}' failed alignment verification: log-likelihood = {:.2}",
+                sample.sample_id, alignment.mean_log_likelihood
+            ));
+        }
+
+        Ok((quality, alignment))
     }
 }
 

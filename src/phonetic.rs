@@ -459,6 +459,22 @@ impl Phoneme {
         )
     }
 
+    /// Returns true if this phoneme is a fricative consonant.
+    pub fn is_fricative(self) -> bool {
+        matches!(
+            self,
+            Phoneme::DH
+                | Phoneme::F
+                | Phoneme::S
+                | Phoneme::SH
+                | Phoneme::TH
+                | Phoneme::V
+                | Phoneme::Z
+                | Phoneme::ZH
+                | Phoneme::HH
+        )
+    }
+
     /// Characteristic consonant burst / frication center frequency in Hz.
     pub fn consonant_burst_frequency(self) -> f32 {
         match self {
