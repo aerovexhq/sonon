@@ -208,6 +208,48 @@ const presets = [
 
 const preRenderedSamples = [
   {
+    title: 'CONVERSATIONAL NATURAL',
+    file: 'sonon_neural_conversational_intro.wav',
+    engine: 'Neural Foundation',
+    tagClass: 'cyan',
+    desc: 'Deep learning foundation acoustic model running at 24 kHz with natural human breath and micro-prosody.'
+  },
+  {
+    title: 'FLIGHT COMMANDER TAKEOFF',
+    file: 'sonon_neural_commander_takeoff.wav',
+    engine: 'Neural Foundation',
+    tagClass: 'cyan',
+    desc: 'Authoritative male flight-deck commander persona with blended voiceprint.'
+  },
+  {
+    title: 'WAYPOINT REACHED (Neural)',
+    file: 'sonon_neural_waypoint_reached.wav',
+    engine: 'Neural Foundation',
+    tagClass: 'cyan',
+    desc: 'High-fidelity neural synthesis benchmarked directly against classical formant models.'
+  },
+  {
+    title: 'AEROSPACE PHONETIC EXPANSION',
+    file: 'sonon_neural_aerospace_expansion.wav',
+    engine: 'Aerospace G2P',
+    tagClass: 'emerald',
+    desc: 'Automatic flight level (FL350), heading (HDG090), runway (RWY28R), and acronym (UAV/TCAS) phonetic expansion.'
+  },
+  {
+    title: 'EMERGENCY ALERT',
+    file: 'sonon_neural_urgency_emergency.wav',
+    engine: 'Neural Urgency',
+    tagClass: 'amber',
+    desc: 'Situational urgency modulation with high transient attack and compressed dynamic range.'
+  },
+  {
+    title: 'TERRAIN CAUTION',
+    file: 'sonon_neural_urgency_caution.wav',
+    engine: 'Neural Urgency',
+    tagClass: 'amber',
+    desc: 'Elevated pitch tension and accelerated articulation for terrain caution.'
+  },
+  {
     title: 'TAKEOFF',
     file: 'takeoff_edge_runtime.wav',
     engine: 'Edge Runtime',

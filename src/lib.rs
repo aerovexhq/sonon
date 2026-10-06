@@ -112,7 +112,10 @@ pub use echolocation::{
     AcousticObstacle, AcousticPointCloud, CaCfarConfig, ChirpConfig, LfmChirpGenerator,
     MultiMicAcousticEcholocator, SubterraneanCaveSimulator,
 };
-pub use engine::{EvaluationReport, FeatureMode, KeywordEvent, SononEngine};
+pub use engine::{
+    EvaluationReport, FeatureMode, KeywordEvent, NeuralSynthOptions, SononEngine,
+    SononVoiceProfile,
+};
 pub use fixed::{FixedDtwMatcher, StaticAudioBuffer, Q15, Q31};
 pub use health::{
     AcousticHealthMonitor, AirframeHealthSnapshot, AnomalySeverity, MavlinkNamedValueFloat,
@@ -128,8 +131,9 @@ pub use ormia::{
 };
 pub use pcen::{PcenConfig, PcenFilter};
 pub use phonetic::{
-    encode_wav_16bit, write_wav_file, ExemplarVariationConfig, FormantTarget, G2pEngine,
-    IntonationContour, KlattSynthesizer, LiljencrantsFantPulse, Phoneme, PhonemeSegment,
+    encode_wav_16bit, write_wav_file, AerospacePhoneticNormalizer, BiquadFilter,
+    ExemplarVariationConfig, FormantTarget, G2pEngine, IntonationContour, KlattSynthesizer,
+    LiljencrantsFantPulse, Phoneme, PhonemeSegment, SononAcousticMaster,
     SyntheticExemplarGenerator, SyntheticExemplarMetadata, VocalAccent,
 };
 pub use psychoacoustic::{

@@ -27,7 +27,10 @@ use crate::mmse_lsa::{LsaConfig, MmseLsaFilter, MmseLsaTelemetry};
 use crate::notch::RotorHarmonicNotchBank;
 use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
-use crate::phonetic::{G2pEngine, KlattSynthesizer, SyntheticExemplarGenerator, VocalAccent};
+use crate::phonetic::{
+    AerospacePhoneticNormalizer, G2pEngine, KlattSynthesizer, SononAcousticMaster,
+    SyntheticExemplarGenerator, VocalAccent,
+};
 use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
 use crate::zero_shot::{
     CrossAccentCalibrationReport, MultiAccentCalibrator, SupportedLanguage,
@@ -161,6 +164,7 @@ pub struct SononEngine {
     neural_vocoder: Option<BigVganVocoder>,
     wavelet_physical_synthesizer: Option<WaveletPhysicalFlowSynthesizer>,
     edge_runtime: Option<EdgeSpeechRuntime>,
+    aerospace_normalizer: AerospacePhoneticNormalizer,
 }
 
 impl SononEngine {
@@ -259,6 +263,7 @@ impl SononEngine {
             neural_vocoder: None,
             wavelet_physical_synthesizer: None,
             edge_runtime: None,
+            aerospace_normalizer: AerospacePhoneticNormalizer::new(),
         }
     }
 
@@ -2655,6 +2660,66 @@ impl SononEngine {
         match &mut self.edge_runtime {
             Some(runtime) => runtime.synthesize_chunk(text),
             None => Err("Edge speech runtime is not enabled".to_string()),
+        }
+    }
+
+    /// Access reference to aerospace phonetic normalizer.
+    pub fn aerospace_normalizer(&self) -> &AerospacePhoneticNormalizer {
+        &self.aerospace_normalizer
+    }
+
+    /// Access mutable reference to aerospace phonetic normalizer.
+    pub fn aerospace_normalizer_mut(&mut self) -> &mut AerospacePhoneticNormalizer {
+        &mut self.aerospace_normalizer
+    }
+
+    /// Normalize flight deck or tactical text by expanding flight levels, headings, runways, and acronyms.
+    pub fn normalize_aerospace_text(&self, text: &str) -> String {
+        self.aerospace_normalizer.normalize(text)
+    }
+
+    /// Master speech audio in-place using 4-pole highpass (45 Hz), sibilance control (7.2 kHz),
+    /// subtle harmonic warmth, and true-peak normalization (-1.0 dBFS).
+    pub fn master_speech_audio(&self, samples: &mut [f32], sample_rate: u32, apply_warmth: bool) {
+        let mut master = SononAcousticMaster::new(sample_rate);
+        master.process_in_place(samples, apply_warmth);
+    }
+}
+
+/// High-level voice persona profile for neural speech synthesis.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SononVoiceProfile {
+    /// Authoritative female flight-deck voice with crisp articulation and natural cadence.
+    FlightSpecialistFemale,
+    /// Deep, authoritative male cockpit commander voice for flight maneuvers and callouts.
+    FlightCommanderMale,
+    /// Warm, ultra-natural conversational assistant voice with human micro-prosody.
+    ConversationalNatural,
+    /// Fast-paced tactical mission controller voice for rapid operational telemetry.
+    TacticalOperationsMale,
+    /// International standard British dispatch voice for air traffic communications.
+    MissionDispatch,
+    /// Custom weighted linear combination of latent speaker styles.
+    CustomBlended(Vec<(String, f32)>),
+}
+
+/// Options and flags for neural speech synthesis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NeuralSynthOptions {
+    /// Speech playback speed multiplier (e.g. 0.95 to 1.15).
+    pub speed: f32,
+    /// Whether to apply domain-specific aerospace acronym and phonetic expansion.
+    pub apply_aerospace_normalization: bool,
+    /// Whether to apply Sonon acoustic mastering (45 Hz highpass, de-essing, -1.0 dBFS peak limiting).
+    pub apply_acoustic_mastering: bool,
+}
+
+impl Default for NeuralSynthOptions {
+    fn default() -> Self {
+        Self {
+            speed: 1.0,
+            apply_aerospace_normalization: true,
+            apply_acoustic_mastering: true,
         }
     }
 }

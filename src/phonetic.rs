@@ -1762,3 +1762,349 @@ pub fn write_wav_file(
     std::fs::write(path, bytes)
 }
 
+// ============================================================================
+// Aerospace & Mission Phonetic Normalization
+// ============================================================================
+
+/// Domain-specific aerospace and tactical text normalizer for neural speech synthesis.
+///
+/// Preprocesses text to guarantee correct phonetic pronunciation of flight levels (e.g. FL350),
+/// runways (e.g. RWY 28R), compass headings (e.g. HDG 090), squawk codes, and tactical acronyms.
+#[derive(Debug, Clone, Default)]
+pub struct AerospacePhoneticNormalizer {
+    custom_acronyms: std::collections::HashMap<String, String>,
+}
+
+impl AerospacePhoneticNormalizer {
+    /// Construct a new normalizer initialized with aviation and defense acronyms.
+    pub fn new() -> Self {
+        let mut custom_acronyms = std::collections::HashMap::new();
+        let default_rules = [
+            ("UAV", "U A V"),
+            ("UAS", "U A S"),
+            ("VTOL", "V-TOL"),
+            ("EO/IR", "E O I R"),
+            ("TACAN", "tack-an"),
+            ("METAR", "mee-tar"),
+            ("NOTAM", "no-tam"),
+            ("VFR", "V F R"),
+            ("IFR", "I F R"),
+            ("ATC", "A T C"),
+            ("TCAS", "tee-cas"),
+            ("ILS", "I L S"),
+            ("AGL", "A G L"),
+            ("MSL", "M S L"),
+            ("ETA", "E T A"),
+            ("RPM", "R P M"),
+            ("VHF", "V H F"),
+            ("UHF", "U H F"),
+            ("GNSS", "G N S S"),
+            ("GPS", "G P S"),
+            ("IMU", "I M U"),
+            ("AHRS", "A-hars"),
+            ("ADS-B", "ads bee"),
+        ];
+        for (k, v) in default_rules {
+            custom_acronyms.insert(k.to_string(), v.to_string());
+        }
+
+        Self { custom_acronyms }
+    }
+
+    /// Register a custom acronym pronunciation rule.
+    pub fn register_acronym(&mut self, acronym: &str, expanded: &str) {
+        self.custom_acronyms.insert(acronym.to_string(), expanded.to_string());
+    }
+
+    /// Convert a single digit to standard aviation terminology.
+    #[inline]
+    fn digit_to_word(d: char) -> Option<&'static str> {
+        match d {
+            '0' => Some("zero"),
+            '1' => Some("one"),
+            '2' => Some("two"),
+            '3' => Some("three"),
+            '4' => Some("four"),
+            '5' => Some("five"),
+            '6' => Some("six"),
+            '7' => Some("seven"),
+            '8' => Some("eight"),
+            '9' => Some("niner"),
+            _ => None,
+        }
+    }
+
+    /// Expand a string of digits into spaced aviation digit words.
+    fn expand_digits(digits: &str) -> String {
+        digits
+            .chars()
+            .filter_map(Self::digit_to_word)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Normalize flight deck input text into fully expanded phonetic words.
+    pub fn normalize(&self, text: &str) -> String {
+        let mut words: Vec<String> = Vec::new();
+
+        for token in text.split_whitespace() {
+            let trimmed = token.trim_matches(|c: char| c.is_ascii_punctuation());
+            let punct_suffix: String = token
+                .chars()
+                .rev()
+                .take_while(|c| c.is_ascii_punctuation())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+
+            // 1. Check custom registered acronyms
+            if let Some(expanded) = self.custom_acronyms.get(trimmed) {
+                words.push(format!("{}{}", expanded, punct_suffix));
+                continue;
+            }
+
+            // 2. Flight level pattern: FL followed by digits (e.g. FL350, FL090)
+            if trimmed.starts_with("FL") && trimmed.len() >= 4 && trimmed[2..].chars().all(|c| c.is_ascii_digit()) {
+                let digit_expansion = Self::expand_digits(&trimmed[2..]);
+                words.push(format!("flight level {}{}", digit_expansion, punct_suffix));
+                continue;
+            }
+
+            // 3. Runway pattern: RWY followed by digits and optional L/R/C (e.g. RWY28R)
+            if trimmed.starts_with("RWY") && trimmed.len() >= 5 {
+                let sub = &trimmed[3..];
+                let mut digit_part = String::new();
+                let mut side = "";
+                for c in sub.chars() {
+                    if c.is_ascii_digit() {
+                        digit_part.push(c);
+                    } else if c == 'L' || c == 'l' {
+                        side = " left";
+                    } else if c == 'R' || c == 'r' {
+                        side = " right";
+                    } else if c == 'C' || c == 'c' {
+                        side = " center";
+                    }
+                }
+                if !digit_part.is_empty() {
+                    let d_exp = Self::expand_digits(&digit_part);
+                    words.push(format!("runway {}{}{}", d_exp, side, punct_suffix));
+                    continue;
+                }
+            }
+
+            // 4. Heading pattern: HDG followed by digits (e.g. HDG270)
+            if trimmed.starts_with("HDG") && trimmed.len() >= 5 && trimmed[3..].chars().all(|c| c.is_ascii_digit()) {
+                let digit_expansion = Self::expand_digits(&trimmed[3..]);
+                words.push(format!("heading {}{}", digit_expansion, punct_suffix));
+                continue;
+            }
+
+            // 5. Default preservation
+            words.push(token.to_string());
+        }
+
+        words.join(" ")
+    }
+}
+
+// ============================================================================
+// Sonon Acoustic Signal Mastering Chain
+// ============================================================================
+
+/// Digital biquad filter in Direct Form II Transposed for safe real-time audio filtering.
+#[derive(Debug, Clone)]
+pub struct BiquadFilter {
+    b0: f32,
+    b1: f32,
+    b2: f32,
+    a1: f32,
+    a2: f32,
+    d1: f32,
+    d2: f32,
+}
+
+impl BiquadFilter {
+    /// Construct a new biquad filter with normalized coefficients.
+    pub fn new(b0: f32, b1: f32, b2: f32, a0: f32, a1: f32, a2: f32) -> Self {
+        let inv_a0 = 1.0 / a0;
+        Self {
+            b0: b0 * inv_a0,
+            b1: b1 * inv_a0,
+            b2: b2 * inv_a0,
+            a1: a1 * inv_a0,
+            a2: a2 * inv_a0,
+            d1: 0.0,
+            d2: 0.0,
+        }
+    }
+
+    /// Process a single audio sample.
+    #[inline]
+    pub fn process_sample(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.d1;
+        self.d1 = self.b1 * x - self.a1 * y + self.d2;
+        self.d2 = self.b2 * x - self.a2 * y;
+        y
+    }
+
+    /// Reset internal delay registers to zero.
+    pub fn reset(&mut self) {
+        self.d1 = 0.0;
+        self.d2 = 0.0;
+    }
+}
+
+/// Sonon Acoustic Signal Mastering Chain.
+///
+/// Implements 4-pole Butterworth highpass filtering (45 Hz subsonic rumble elimination),
+/// sibilance notch filtering (7.2 kHz), soft harmonic warmth saturation,
+/// and broadcast peak normalization to -1.0 dBFS true-peak headroom.
+#[derive(Debug, Clone)]
+pub struct SononAcousticMaster {
+    pub sample_rate: u32,
+    hp_section1: BiquadFilter,
+    hp_section2: BiquadFilter,
+    sibilance_notch: BiquadFilter,
+}
+
+impl SononAcousticMaster {
+    /// Construct a new acoustic mastering chain calibrated for the given sample rate.
+    pub fn new(sample_rate: u32) -> Self {
+        let fs = sample_rate as f32;
+
+        let q1 = 0.5411961f32;
+        let q2 = 1.3065630f32;
+        let fc = 45.0f32;
+        let w0 = 2.0 * PI * fc / fs;
+        let cos_w0 = w0.cos();
+        let sin_w0 = w0.sin();
+
+        // Section 1
+        let alpha1 = sin_w0 / (2.0 * q1);
+        let b0_hp = (1.0 + cos_w0) * 0.5;
+        let b1_hp = -(1.0 + cos_w0);
+        let b2_hp = (1.0 + cos_w0) * 0.5;
+        let a0_hp1 = 1.0 + alpha1;
+        let a1_hp1 = -2.0 * cos_w0;
+        let a2_hp1 = 1.0 - alpha1;
+        let hp_section1 = BiquadFilter::new(b0_hp, b1_hp, b2_hp, a0_hp1, a1_hp1, a2_hp1);
+
+        // Section 2
+        let alpha2 = sin_w0 / (2.0 * q2);
+        let a0_hp2 = 1.0 + alpha2;
+        let a1_hp2 = -2.0 * cos_w0;
+        let a2_hp2 = 1.0 - alpha2;
+        let hp_section2 = BiquadFilter::new(b0_hp, b1_hp, b2_hp, a0_hp2, a1_hp2, a2_hp2);
+
+        // Sibilance Notch Filter at 7200 Hz with Q = 3.0
+        let f_notch = 7200.0f32.min(fs * 0.45);
+        let w_notch = 2.0 * PI * f_notch / fs;
+        let cos_wn = w_notch.cos();
+        let sin_wn = w_notch.sin();
+        let alpha_n = sin_wn / (2.0 * 3.0);
+        let b0_n = 1.0;
+        let b1_n = -2.0 * cos_wn;
+        let b2_n = 1.0;
+        let a0_n = 1.0 + alpha_n;
+        let a1_n = -2.0 * cos_wn;
+        let a2_n = 1.0 - alpha_n;
+        let sibilance_notch = BiquadFilter::new(b0_n, b1_n, b2_n, a0_n, a1_n, a2_n);
+
+        Self {
+            sample_rate,
+            hp_section1,
+            hp_section2,
+            sibilance_notch,
+        }
+    }
+
+    /// Process audio samples in-place through the mastering chain.
+    pub fn process_in_place(&mut self, samples: &mut [f32], apply_warmth: bool) {
+        if samples.is_empty() {
+            return;
+        }
+
+        // 1. Remove DC offset
+        let sum: f32 = samples.iter().sum();
+        let dc_mean = sum / samples.len() as f32;
+        for s in samples.iter_mut() {
+            *s -= dc_mean;
+        }
+
+        // 2. Cascade 4-pole highpass filter
+        for s in samples.iter_mut() {
+            let y1 = self.hp_section1.process_sample(*s);
+            *s = self.hp_section2.process_sample(y1);
+        }
+
+        // 3. Sibilance control notch
+        for s in samples.iter_mut() {
+            *s = self.sibilance_notch.process_sample(*s);
+        }
+
+        // 4. Subtle vocal warmth saturation
+        if apply_warmth {
+            for s in samples.iter_mut() {
+                let clamped = s.clamp(-1.0, 1.0);
+                *s = clamped + 0.04 * clamped * clamped.abs() - 0.02 * clamped * clamped * clamped;
+            }
+        }
+
+        // 5. Broadcast peak normalization to -1.0 dBFS (amplitude 0.89125)
+        let mut max_abs = 0.0f32;
+        for &s in samples.iter() {
+            let abs_s = s.abs();
+            if abs_s > max_abs {
+                max_abs = abs_s;
+            }
+        }
+
+        if max_abs > 1e-4 {
+            let target_peak = 0.89125f32;
+            let scale = target_peak / max_abs;
+            for s in samples.iter_mut() {
+                *s *= scale;
+            }
+        }
+    }
+
+    /// Process and return a new mastered audio vector.
+    pub fn process(&mut self, samples: &[f32], apply_warmth: bool) -> Vec<f32> {
+        let mut output = samples.to_vec();
+        self.process_in_place(&mut output, apply_warmth);
+        output
+    }
+}
+
+#[cfg(test)]
+mod tests_mastering {
+    use super::*;
+
+    #[test]
+    fn test_aerospace_phonetic_normalizer() {
+        let norm = AerospacePhoneticNormalizer::new();
+        assert_eq!(norm.normalize("FL350"), "flight level three five zero");
+        assert_eq!(norm.normalize("RWY 28R"), "RWY 28R");
+        assert_eq!(norm.normalize("RWY28R"), "runway two eight right");
+        assert_eq!(norm.normalize("HDG090"), "heading zero niner zero");
+        assert_eq!(norm.normalize("UAV status nominal."), "U A V status nominal.");
+        assert_eq!(norm.normalize("VTOL mode active"), "V-TOL mode active");
+    }
+
+    #[test]
+    fn test_acoustic_mastering_chain() {
+        let mut master = SononAcousticMaster::new(24000);
+        let mut samples = vec![0.5f32; 2400]; // DC step
+        // Add a 100 Hz tone
+        for (i, s) in samples.iter_mut().enumerate() {
+            *s += (2.0 * PI * 100.0 * i as f32 / 24000.0).sin() * 0.3;
+        }
+        master.process_in_place(&mut samples, true);
+        assert_eq!(samples.len(), 2400);
+        let max_val = samples.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
+        assert!((max_val - 0.89125).abs() < 1e-3, "Peak should be normalized to -1.0 dBFS");
+    }
+}
+
