@@ -19,6 +19,7 @@ use crate::dtw::{
 use crate::flow_matching::{CfmConfig, CfmSpeechSynthesizer, FlowSolverScheme};
 use crate::vocoder::{BigVganVocoder, VocoderConfig};
 use crate::wavelet_synthesis::{WaveletPhysicalFlowSynthesizer, WaveletSynthesizerConfig};
+use crate::edge_runtime::{EdgeSpeechRuntime, StreamingEdgeConfig};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -159,6 +160,7 @@ pub struct SononEngine {
     cfm_synthesizer: Option<CfmSpeechSynthesizer>,
     neural_vocoder: Option<BigVganVocoder>,
     wavelet_physical_synthesizer: Option<WaveletPhysicalFlowSynthesizer>,
+    edge_runtime: Option<EdgeSpeechRuntime>,
 }
 
 impl SononEngine {
@@ -256,6 +258,7 @@ impl SononEngine {
             cfm_synthesizer: None,
             neural_vocoder: None,
             wavelet_physical_synthesizer: None,
+            edge_runtime: None,
         }
     }
 
@@ -2624,6 +2627,34 @@ impl SononEngine {
                 synth.config().default_solver_scheme,
             )),
             None => Err("Wavelet physical flow synthesizer is not enabled".to_string()),
+        }
+    }
+
+    /// Enable on-device edge and WebAssembly streaming speech synthesis runtime.
+    pub fn enable_edge_speech_runtime(&mut self, config: StreamingEdgeConfig) {
+        self.edge_runtime = Some(EdgeSpeechRuntime::new(config));
+    }
+
+    /// Disable edge speech synthesis runtime.
+    pub fn disable_edge_speech_runtime(&mut self) {
+        self.edge_runtime = None;
+    }
+
+    /// Access reference to active edge speech runtime if enabled.
+    pub fn edge_speech_runtime(&self) -> Option<&EdgeSpeechRuntime> {
+        self.edge_runtime.as_ref()
+    }
+
+    /// Access mutable reference to active edge speech runtime if enabled.
+    pub fn edge_speech_runtime_mut(&mut self) -> Option<&mut EdgeSpeechRuntime> {
+        self.edge_runtime.as_mut()
+    }
+
+    /// Synthesize speech audio chunk via streaming edge runtime.
+    pub fn synthesize_edge_speech_streaming(&mut self, text: &str) -> Result<Vec<f32>, String> {
+        match &mut self.edge_runtime {
+            Some(runtime) => runtime.synthesize_chunk(text),
+            None => Err("Edge speech runtime is not enabled".to_string()),
         }
     }
 }

@@ -52,6 +52,7 @@ pub mod dataset_ingest;
 pub mod flow_matching;
 pub mod vocoder;
 pub mod wavelet_synthesis;
+pub mod edge_runtime;
 
 pub use vocoder::{
     bessel_i0, kaiser_window, normalized_sinc, snake_beta_scalar, AntiAliasedAmpBlock,
@@ -193,6 +194,10 @@ pub use psola::{
 pub use wavelet_synthesis::{
     CalderonWaveletInverter, DyadicMorletCwt, GlottalFlowGenerator, PortHamiltonianVocalFold,
     WaveletPhysicalFlowSynthesizer, WaveletScalogram, WaveletSynthesizerConfig,
+};
+pub use edge_runtime::{
+    AudioSpscRingBuffer, EdgeSpeechRuntime, QuantizedLinear, QuantizedWeightTensor,
+    StaticTensorArena, StreamingEdgeConfig,
 };
 
 
