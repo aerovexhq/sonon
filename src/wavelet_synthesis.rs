@@ -10,6 +10,7 @@ use crate::flow_matching::{
     DeterministicRng, FlowConditioning, FlowMatchingDiT, FlowSolverScheme, Linear,
     TextConditioningEncoder,
 };
+use crate::phonetic::{FormantTarget, G2pEngine};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
@@ -1056,32 +1057,172 @@ impl WaveletPhysicalFlowSynthesizer {
         // 2. Dyadic Morlet Continuous Wavelet Transform of physical glottal excitation
         let glottal_cwt = self.cwt.forward(&glottal_flow);
 
-        // 3. Temporal pooling of glottal scalogram to frame resolution
+        // 3. Precompute phonetic targets and acoustic formant trajectories
+        let segments = G2pEngine::text_to_phonemes(trimmed);
+        let mut f1_samples = vec![500.0f32; num_samples];
+        let mut f2_samples = vec![1500.0f32; num_samples];
+        let mut f3_samples = vec![2500.0f32; num_samples];
+        let mut voicing_samples = vec![0.8f32; num_samples];
+        let mut fric_samples = vec![0.0f32; num_samples];
+        let mut burst_samples = vec![0.0f32; num_samples];
+        let mut burst_fc_samples = vec![3000.0f32; num_samples];
+
+        if !segments.is_empty() {
+            let total_dur: f32 = segments.iter().map(|s| s.duration_ms.max(25.0)).sum();
+            let mut sample_idx = 0usize;
+
+            for seg_i in 0..segments.len() {
+                let seg = &segments[seg_i];
+                let seg_dur = seg.duration_ms.max(25.0);
+                let seg_samples = ((seg_dur / total_dur) * num_samples as f32).round() as usize;
+                let seg_end = if seg_i + 1 == segments.len() {
+                    num_samples
+                } else {
+                    (sample_idx + seg_samples).min(num_samples)
+                };
+                let len = seg_end.saturating_sub(sample_idx);
+                if len == 0 {
+                    continue;
+                }
+
+                let target: FormantTarget = seg.phoneme.acoustic_targets();
+                let diph = seg.phoneme.diphthong_targets();
+                let is_stop = seg.phoneme.is_stop();
+                let is_vowel = seg.phoneme.is_vowel();
+                let is_voiced = seg.phoneme.is_voiced();
+                let burst_fc = seg.phoneme.consonant_burst_frequency();
+
+                let prev_locus = if seg_i > 0 && is_vowel && !segments[seg_i - 1].phoneme.is_vowel() {
+                    Some(segments[seg_i - 1].phoneme.consonant_locus())
+                } else {
+                    None
+                };
+                let next_locus = if seg_i + 1 < segments.len() && is_vowel && !segments[seg_i + 1].phoneme.is_vowel() {
+                    Some(segments[seg_i + 1].phoneme.consonant_locus())
+                } else {
+                    None
+                };
+
+                for i in 0..len {
+                    let idx = sample_idx + i;
+                    let progress = if len > 1 { i as f32 / (len - 1) as f32 } else { 0.5 };
+
+                    let (base_f1, mut base_f2, mut base_f3) = if let Some((start_t, end_t)) = diph {
+                        (
+                            start_t.f1 + progress * (end_t.f1 - start_t.f1),
+                            start_t.f2 + progress * (end_t.f2 - start_t.f2),
+                            start_t.f3 + progress * (end_t.f3 - start_t.f3),
+                        )
+                    } else {
+                        (target.f1, target.f2, target.f3)
+                    };
+
+                    if let Some((loc2, loc3)) = prev_locus {
+                        if progress < 0.35 {
+                            let a = 0.5 * (1.0 - (PI * progress / 0.35).cos());
+                            base_f2 = loc2 + a * (base_f2 - loc2);
+                            base_f3 = loc3 + a * (base_f3 - loc3);
+                        }
+                    }
+                    if let Some((loc2, loc3)) = next_locus {
+                        if progress > 0.65 {
+                            let a = 0.5 * (1.0 - (PI * (1.0 - progress) / 0.35).cos());
+                            base_f2 = loc2 + a * (base_f2 - loc2);
+                            base_f3 = loc3 + a * (base_f3 - loc3);
+                        }
+                    }
+
+                    f1_samples[idx] = base_f1;
+                    f2_samples[idx] = base_f2;
+                    f3_samples[idx] = base_f3;
+                    burst_fc_samples[idx] = burst_fc;
+
+                    if is_stop {
+                        if progress < 0.65 {
+                            voicing_samples[idx] = if is_voiced { target.voicing_amp * 0.25 } else { 0.0 };
+                            fric_samples[idx] = 0.0;
+                            burst_samples[idx] = 0.0;
+                        } else if progress < 0.80 {
+                            voicing_samples[idx] = 0.0;
+                            fric_samples[idx] = 0.0;
+                            burst_samples[idx] = 0.75;
+                        } else {
+                            voicing_samples[idx] = if is_voiced { target.voicing_amp * 0.40 } else { 0.0 };
+                            fric_samples[idx] = 0.25;
+                            burst_samples[idx] = 0.0;
+                        }
+                    } else {
+                        voicing_samples[idx] = target.voicing_amp;
+                        fric_samples[idx] = target.friction_amp;
+                        burst_samples[idx] = 0.0;
+                    }
+                }
+
+                sample_idx = seg_end;
+            }
+        }
+
+        // 4. Temporal pooling of glottal scalogram to frame resolution and acoustic target calculation
         let hop = self.config.hop_size.max(1);
         let num_frames = (num_samples + hop - 1) / hop;
         let total_scales = self.cwt.total_scales();
 
         let mut glottal_frames = Vec::with_capacity(num_frames);
+        let mut target_frames = Vec::with_capacity(num_frames);
+
         for f in 0..num_frames {
             let start = f * hop;
             let end = ((f + 1) * hop).min(num_samples);
             let count = (end - start).max(1) as f32;
 
-            let mut frame = Vec::with_capacity(total_scales);
+            let mut g_frame = Vec::with_capacity(total_scales);
             for s in 0..total_scales {
                 let sum: f32 = glottal_cwt.magnitude[s][start..end].iter().sum();
-                frame.push(sum / count);
+                g_frame.push(sum / count);
             }
-            glottal_frames.push(frame);
+
+            let mid_idx = ((start + end) / 2).min(num_samples - 1);
+            let cur_f1 = f1_samples[mid_idx];
+            let cur_f2 = f2_samples[mid_idx];
+            let cur_f3 = f3_samples[mid_idx];
+            let cur_f4 = 3500.0f32;
+            let cur_v = voicing_samples[mid_idx];
+            let cur_fric = fric_samples[mid_idx];
+            let cur_burst = burst_samples[mid_idx];
+            let cur_burst_fc = burst_fc_samples[mid_idx];
+
+            let mut t_frame = Vec::with_capacity(total_scales);
+            for s in 0..total_scales {
+                let fs = self.cwt.frequencies[s];
+
+                // Vocal tract acoustic formant transfer function envelope across Morlet frequency scales
+                let h1 = 1.0 / (1.0 + ((fs - cur_f1) / 50.0).powi(2)).sqrt();
+                let h2 = 0.8 / (1.0 + ((fs - cur_f2) / 70.0).powi(2)).sqrt();
+                let h3 = 0.6 / (1.0 + ((fs - cur_f3) / 100.0).powi(2)).sqrt();
+                let h4 = 0.4 / (1.0 + ((fs - cur_f4) / 140.0).powi(2)).sqrt();
+                let formant_env = h1 + h2 + h3 + h4;
+
+                let lip_rad = (fs.max(150.0) / 1000.0).sqrt();
+                let vocal_component = g_frame[s] * formant_env * cur_v * lip_rad * 0.40;
+
+                let delta_f = fs - cur_burst_fc;
+                let turb_shape = (-0.5 * (delta_f / 1200.0).powi(2)).exp();
+                let turb_component = (cur_fric * 0.45 + cur_burst * 0.70) * turb_shape;
+
+                t_frame.push((vocal_component + turb_component).max(0.0));
+            }
+
+            glottal_frames.push(g_frame);
+            target_frames.push(t_frame);
         }
 
-        // 4. Conditioning context: text phonetic tokens + physical glottal prompt tokens
+        // 5. Conditioning context: text phonetic tokens + physical glottal prompt tokens
         let text_tokens = self.text_encoder.encode_text(text);
         let glottal_tokens = self.glottal_proj.forward_matrix(&glottal_frames);
         let condition = FlowConditioning::new(text_tokens, Some(glottal_tokens));
         let ctx_tokens = condition.combined_tokens();
 
-        // 5. Prior state x0: blended standard Gaussian noise + physical glottal source scalogram
+        // 6. Prior state x0: blended standard Gaussian noise + physical acoustic vocal tract target
         let mut rng = DeterministicRng::new(self.seed);
         let z0 = rng.sample_latent(num_frames, total_scales);
 
@@ -1090,24 +1231,24 @@ impl WaveletPhysicalFlowSynthesizer {
         for t in 0..num_frames {
             let mut row = Vec::with_capacity(total_scales);
             for s in 0..total_scales {
-                row.push((1.0 - alpha) * z0[t][s] + alpha * glottal_frames[t][s]);
+                row.push((1.0 - alpha) * z0[t][s] * 0.02 + alpha * target_frames[t][s]);
             }
             x.push(row);
         }
 
-        // 6. Numerical ODE integration along the optimal transport vector field
+        // 7. Numerical ODE integration along the optimal transport vector field
         let n_steps = num_steps.max(1);
         let h = 1.0f32 / (n_steps as f32);
 
-        // Physical drift evaluator combining neural vector field with glottal attractor
+        // Physical drift evaluator combining neural vector field with vocal tract attractor
         let eval_vector_field = |state: &[Vec<f32>], t_val: f32| -> Vec<Vec<f32>> {
             let v_nn = self.dit.forward(state, t_val, Some(&ctx_tokens));
             let mut v_tot = Vec::with_capacity(num_frames);
             for i in 0..num_frames {
                 let mut row = Vec::with_capacity(total_scales);
                 for j in 0..total_scales {
-                    let drift = alpha * (glottal_frames[i][j] - state[i][j]);
-                    row.push(v_nn[i][j] + drift);
+                    let drift = alpha * (target_frames[i][j] - state[i][j]);
+                    row.push(v_nn[i][j] * 0.01 + drift);
                 }
                 v_tot.push(row);
             }
@@ -1218,7 +1359,7 @@ impl WaveletPhysicalFlowSynthesizer {
             }
         }
 
-        // 7. Non-negative magnitude clamp & linear temporal interpolation to sample resolution
+        // 8. Non-negative magnitude clamp & linear temporal interpolation to sample resolution
         let mut refined_sample_mags = vec![vec![0.0f32; num_samples]; total_scales];
         for n in 0..num_samples {
             let float_frame = (n as f32) / (hop as f32);
@@ -1233,11 +1374,10 @@ impl WaveletPhysicalFlowSynthesizer {
             }
         }
 
-        // 8. Reconstruct speech real wavelet coefficients using physical glottal carrier phase
+        // 9. Reconstruct speech real wavelet coefficients using physical glottal carrier phase and turbulent aspiration
         let mut real_speech = vec![vec![0.0f32; num_samples]; total_scales];
         for s in 0..total_scales {
             let freq = self.cwt.frequencies[s];
-            let unvoiced_ratio = ((freq - 3500.0) / 4500.0).clamp(0.0, 0.20);
 
             for n in 0..num_samples {
                 let c_re = glottal_cwt.real[s][n];
@@ -1245,6 +1385,12 @@ impl WaveletPhysicalFlowSynthesizer {
                 let carrier_cos = (c_re / c_mag).clamp(-1.0, 1.0);
 
                 let turb_phase = ((n * 1337 + s * 97 + 1) as f32 * 0.1).cos();
+                let cur_v = voicing_samples[n];
+                let unvoiced_ratio = if cur_v > 0.15 {
+                    ((freq - 3200.0) / 3800.0).clamp(0.0, 0.25)
+                } else {
+                    1.0
+                };
                 let effective_phase =
                     carrier_cos * (1.0 - unvoiced_ratio) + turb_phase * unvoiced_ratio;
 
@@ -1252,12 +1398,12 @@ impl WaveletPhysicalFlowSynthesizer {
             }
         }
 
-        // 9. Exact Analytical Calderon Wavelet Inversion to time domain
+        // 10. Exact Analytical Calderon Wavelet Inversion to time domain
         let mut audio = self
             .inverter
             .reconstruct_from_real(&real_speech, &self.cwt.scales);
 
-        // 10. Normalization strictly bounded within [-1.0, 1.0]
+        // 11. Normalization strictly bounded within [-1.0, 1.0]
         let max_abs = audio.iter().fold(0.0f32, |acc, &v| acc.max(v.abs()));
         if max_abs > 0.95 {
             let inv = 0.95 / max_abs;

@@ -475,6 +475,49 @@ impl Phoneme {
         )
     }
 
+    /// Returns true if this phoneme has voicing vocal fold excitation.
+    pub fn is_voiced(self) -> bool {
+        self.is_vowel()
+            || matches!(
+                self,
+                Phoneme::B
+                    | Phoneme::D
+                    | Phoneme::G
+                    | Phoneme::V
+                    | Phoneme::Z
+                    | Phoneme::ZH
+                    | Phoneme::DH
+                    | Phoneme::JH
+                    | Phoneme::M
+                    | Phoneme::N
+                    | Phoneme::NG
+                    | Phoneme::L
+                    | Phoneme::R
+                    | Phoneme::W
+                    | Phoneme::Y
+            )
+    }
+
+    /// Characteristic consonant acoustic locus frequencies (F2_locus, F3_locus) in Hz.
+    pub fn consonant_locus(self) -> (f32, f32) {
+        match self {
+            Phoneme::P | Phoneme::B | Phoneme::M | Phoneme::F | Phoneme::V => (850.0, 2100.0),
+            Phoneme::T
+            | Phoneme::D
+            | Phoneme::N
+            | Phoneme::S
+            | Phoneme::Z
+            | Phoneme::TH
+            | Phoneme::DH
+            | Phoneme::L => (1800.0, 2700.0),
+            Phoneme::SH | Phoneme::ZH | Phoneme::CH | Phoneme::JH | Phoneme::Y => (2100.0, 3000.0),
+            Phoneme::K | Phoneme::G | Phoneme::NG => (2400.0, 2600.0),
+            Phoneme::R => (1300.0, 1650.0),
+            Phoneme::W => (750.0, 2200.0),
+            _ => (1500.0, 2500.0),
+        }
+    }
+
     /// Characteristic consonant burst / frication center frequency in Hz.
     pub fn consonant_burst_frequency(self) -> f32 {
         match self {
@@ -1366,7 +1409,7 @@ impl KlattSynthesizer {
                 glottal_phase -= 2.0 * PI;
             }
 
-            // Liljencrants-Fant (LF) parametric glottal flow excitation
+            // Liljencrants-Fant (LF) parametric glottal flow derivative excitation
             let p = glottal_phase / (2.0 * PI);
             let glottal_wave = lf_pulse.evaluate(p);
 
@@ -1377,6 +1420,7 @@ impl KlattSynthesizer {
             // Voicing source excitation with aspiration breathiness
             let v_amp = voicing_traj[n];
             let asp_amp = self.breathiness;
+
             // Update vocal tract resonators dynamically at 0.5ms control rate (every 8 samples)
             if n % 8 == 0 {
                 res1.set_coefficients(f1_traj[n], b1_traj[n], self.sample_rate);

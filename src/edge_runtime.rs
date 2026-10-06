@@ -472,29 +472,39 @@ impl FormantResonator {
             y1: 0.0,
             y2: 0.0,
         };
-        res.update(freq, bw, sample_rate);
+        res.update_cascade(freq, bw, sample_rate);
         res
     }
 
-    fn update(&mut self, freq: f32, bw: f32, sample_rate: f32) {
+    pub fn update_cascade(&mut self, freq: f32, bw: f32, sample_rate: f32) {
         let f_clamped = freq.clamp(100.0, sample_rate * 0.48);
         let b_clamped = bw.clamp(30.0, 3000.0);
         let r = (-PI * b_clamped / sample_rate).exp();
         let theta = 2.0 * PI * f_clamped / sample_rate;
         self.a1 = -2.0 * r * theta.cos();
         self.a2 = r * r;
-        self.b0 = (1.0 - r).max(1e-5);
+        self.b0 = (1.0 + self.a1 + self.a2).max(1e-4);
+    }
+
+    pub fn update_bandpass(&mut self, freq: f32, bw: f32, sample_rate: f32) {
+        let f_clamped = freq.clamp(100.0, sample_rate * 0.48);
+        let b_clamped = bw.clamp(30.0, 3000.0);
+        let r = (-PI * b_clamped / sample_rate).exp();
+        let theta = 2.0 * PI * f_clamped / sample_rate;
+        self.a1 = -2.0 * r * theta.cos();
+        self.a2 = r * r;
+        self.b0 = (1.0 - r).max(1e-4);
     }
 
     #[inline(always)]
-    fn process(&mut self, input: f32) -> f32 {
+    pub fn process(&mut self, input: f32) -> f32 {
         let out = self.b0 * input - self.a1 * self.y1 - self.a2 * self.y2;
         self.y2 = self.y1;
         self.y1 = out;
         out
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.y1 = 0.0;
         self.y2 = 0.0;
     }
@@ -546,6 +556,10 @@ pub struct EdgeSpeechRuntime {
     resonator_f1: FormantResonator,
     resonator_f2: FormantResonator,
     resonator_f3: FormantResonator,
+    resonator_f4: FormantResonator,
+    resonator_fric: FormantResonator,
+    resonator_burst: FormantResonator,
+    y_rad_prev: f32,
     lf_pulse: LiljencrantsFantPulse,
 }
 
@@ -568,6 +582,11 @@ impl EdgeSpeechRuntime {
         let resonator_f1 = FormantResonator::new(500.0, 90.0, config.sample_rate);
         let resonator_f2 = FormantResonator::new(1500.0, 110.0, config.sample_rate);
         let resonator_f3 = FormantResonator::new(2500.0, 170.0, config.sample_rate);
+        let resonator_f4 = FormantResonator::new(3500.0, 250.0, config.sample_rate);
+        let mut resonator_fric = FormantResonator::new(4000.0, 1000.0, config.sample_rate);
+        resonator_fric.update_bandpass(4000.0, 1000.0, config.sample_rate);
+        let mut resonator_burst = FormantResonator::new(3000.0, 800.0, config.sample_rate);
+        resonator_burst.update_bandpass(3000.0, 800.0, config.sample_rate);
         let lf_pulse = LiljencrantsFantPulse::from_rd(1.0);
 
         Self {
@@ -582,6 +601,10 @@ impl EdgeSpeechRuntime {
             resonator_f1,
             resonator_f2,
             resonator_f3,
+            resonator_f4,
+            resonator_fric,
+            resonator_burst,
+            y_rad_prev: 0.0,
             lf_pulse,
         }
     }
@@ -620,6 +643,10 @@ impl EdgeSpeechRuntime {
         self.resonator_f1.reset();
         self.resonator_f2.reset();
         self.resonator_f3.reset();
+        self.resonator_f4.reset();
+        self.resonator_fric.reset();
+        self.resonator_burst.reset();
+        self.y_rad_prev = 0.0;
     }
 
     /// Read available audio samples from the internal ring buffer into `output`.
@@ -646,8 +673,28 @@ impl EdgeSpeechRuntime {
         let hop_size = self.config.hop_size.max(32);
         let sample_rate = self.config.sample_rate;
 
-        for segment in &segments {
+        let num_segments = segments.len();
+        for seg_idx in 0..num_segments {
+            let segment = &segments[seg_idx];
             let target: FormantTarget = segment.phoneme.acoustic_targets();
+            let diph = segment.phoneme.diphthong_targets();
+            let is_stop = segment.phoneme.is_stop();
+            let is_vowel = segment.phoneme.is_vowel();
+            let is_voiced = segment.phoneme.is_voiced();
+            let burst_fc = segment.phoneme.consonant_burst_frequency();
+
+            // Consonant locus targets for coarticulation transitions
+            let prev_locus = if seg_idx > 0 && is_vowel && !segments[seg_idx - 1].phoneme.is_vowel() {
+                Some(segments[seg_idx - 1].phoneme.consonant_locus())
+            } else {
+                None
+            };
+            let next_locus = if seg_idx + 1 < num_segments && is_vowel && !segments[seg_idx + 1].phoneme.is_vowel() {
+                Some(segments[seg_idx + 1].phoneme.consonant_locus())
+            } else {
+                None
+            };
+
             let duration_sec = (segment.duration_ms * 0.001).max(0.02);
             let frames_count = ((duration_sec * sample_rate) / hop_size as f32)
                 .round()
@@ -692,31 +739,84 @@ impl EdgeSpeechRuntime {
                     .map_err(|e| e.to_string())?;
 
                 // 5. Extract acoustic parameter modulations from scratch_b
-                let mod_f1 = scratch_b[0].tanh() * 0.10;
-                let mod_f2 = scratch_b[1].tanh() * 0.10;
-                let mod_f3 = scratch_b[2].tanh() * 0.10;
-                let mod_pitch = scratch_b[3].tanh() * 0.05;
-                let mod_voicing = (scratch_b[4].tanh() * 0.15).max(-0.5);
+                let mod_f1 = scratch_b[0].tanh() * 0.08;
+                let mod_f2 = scratch_b[1].tanh() * 0.08;
+                let mod_f3 = scratch_b[2].tanh() * 0.08;
+                let mod_pitch = scratch_b[3].tanh() * 0.04;
+                let mod_voicing = (scratch_b[4].tanh() * 0.12).max(-0.4);
 
-                let f1 = (target.f1 * (1.0 + mod_f1)).clamp(150.0, 1100.0);
-                let f2 = (target.f2 * (1.0 + mod_f2)).clamp(600.0, 3200.0);
-                let f3 = (target.f3 * (1.0 + mod_f3)).clamp(1400.0, 4200.0);
+                let progress = if frames_count > 1 {
+                    f as f32 / (frames_count - 1) as f32
+                } else {
+                    0.5
+                };
 
-                let voicing_amp = (target.voicing_amp * (1.0 + mod_voicing)).clamp(0.0, 1.0);
-                let aspiration_amp = target.aspiration_amp.clamp(0.0, 1.0);
-                let friction_amp = target.friction_amp.clamp(0.0, 1.0);
+                // Base formants with diphthong glide or nominal targets
+                let (base_f1, mut base_f2, mut base_f3) = if let Some((start_t, end_t)) = diph {
+                    (
+                        start_t.f1 + progress * (end_t.f1 - start_t.f1),
+                        start_t.f2 + progress * (end_t.f2 - start_t.f2),
+                        start_t.f3 + progress * (end_t.f3 - start_t.f3),
+                    )
+                } else {
+                    (target.f1, target.f2, target.f3)
+                };
 
-                self.resonator_f1.update(f1, target.b1, sample_rate);
-                self.resonator_f2.update(f2, target.b2, sample_rate);
-                self.resonator_f3.update(f3, target.b3, sample_rate);
+                // Consonant locus coarticulation transitions (first 35% and last 35% of vowel)
+                if let Some((loc2, loc3)) = prev_locus {
+                    if progress < 0.35 {
+                        let a = 0.5 * (1.0 - (PI * progress / 0.35).cos());
+                        base_f2 = loc2 + a * (base_f2 - loc2);
+                        base_f3 = loc3 + a * (base_f3 - loc3);
+                    }
+                }
+                if let Some((loc2, loc3)) = next_locus {
+                    if progress > 0.65 {
+                        let a = 0.5 * (1.0 - (PI * (1.0 - progress) / 0.35).cos());
+                        base_f2 = loc2 + a * (base_f2 - loc2);
+                        base_f3 = loc3 + a * (base_f3 - loc3);
+                    }
+                }
+
+                let f1 = (base_f1 * (1.0 + mod_f1)).clamp(150.0, 1100.0);
+                let f2 = (base_f2 * (1.0 + mod_f2)).clamp(600.0, 3200.0);
+                let f3 = (base_f3 * (1.0 + mod_f3)).clamp(1400.0, 4200.0);
 
                 let current_f0 = (self.config.pitch_f0 * (1.0 + mod_pitch)).clamp(60.0, 400.0);
                 let phase_inc = (2.0 * PI * current_f0) / sample_rate;
 
+                self.resonator_f1.update_cascade(f1, target.b1, sample_rate);
+                self.resonator_f2.update_cascade(f2, target.b2, sample_rate);
+                self.resonator_f3.update_cascade(f3, target.b3, sample_rate);
+                self.resonator_f4.update_cascade(3500.0, 260.0, sample_rate);
+
+                self.resonator_fric.update_bandpass(burst_fc, 1200.0, sample_rate);
+                self.resonator_burst.update_bandpass(burst_fc, 800.0, sample_rate);
+
                 let mut noise_state = ((self.frame_counter * hop_size) as u32).wrapping_mul(2654435761);
 
                 // 6. Synthesize hop_size audio samples for current frame
-                for _ in 0..hop_size {
+                for s in 0..hop_size {
+                    let total_seg_samples = (frames_count * hop_size) as f32;
+                    let sample_in_seg = (f * hop_size + s) as f32;
+                    let p = sample_in_seg / total_seg_samples;
+
+                    let (voicing_amp, fric_amp, burst_amp) = if is_stop {
+                        // Closure -> Burst -> Aspiration release
+                        if p < 0.65 {
+                            let v = if is_voiced { target.voicing_amp * 0.25 } else { 0.0 };
+                            (v, 0.0, 0.0)
+                        } else if p < 0.80 {
+                            (0.0, 0.0, 0.70)
+                        } else {
+                            let v = if is_voiced { target.voicing_amp * 0.45 } else { 0.0 };
+                            (v, 0.25, 0.0)
+                        }
+                    } else {
+                        let v = (target.voicing_amp * (1.0 + mod_voicing)).clamp(0.0, 1.0);
+                        (v, target.friction_amp, 0.0)
+                    };
+
                     self.oscillator_phase += phase_inc;
                     if self.oscillator_phase >= 2.0 * PI {
                         self.oscillator_phase -= 2.0 * PI;
@@ -730,16 +830,34 @@ impl EdgeSpeechRuntime {
                     // Unvoiced turbulent noise excitation via deterministic integer LCG
                     noise_state = noise_state.wrapping_mul(1664525).wrapping_add(1013904223);
                     let noise_sample = ((noise_state >> 16) as f32 / 32768.0) - 1.0;
-                    let unvoiced_exc = noise_sample * (aspiration_amp + friction_amp * 0.8);
 
-                    let total_exc = voiced_exc + unvoiced_exc;
+                    let asp_exc = noise_sample * (target.aspiration_amp * 0.12 + 0.015 * voicing_amp);
+                    let total_vocal_exc = voiced_exc + asp_exc;
 
-                    // Filter through formant resonators
-                    let r1 = self.resonator_f1.process(total_exc);
-                    let r2 = self.resonator_f2.process(total_exc);
-                    let r3 = self.resonator_f3.process(total_exc);
+                    // Series cascade vocal tract: R1 -> R2 -> R3 -> R4
+                    let r1 = self.resonator_f1.process(total_vocal_exc);
+                    let r2 = self.resonator_f2.process(r1);
+                    let r3 = self.resonator_f3.process(r2);
+                    let r4 = self.resonator_f4.process(r3);
 
-                    let audio_sample = (r1 * 0.60 + r2 * 0.30 + r3 * 0.15).clamp(-1.0, 1.0);
+                    // Lip radiation impedance filter: 1 - 0.95 z^-1
+                    let vocal_rad = r4 - 0.95 * self.y_rad_prev;
+                    self.y_rad_prev = r4;
+
+                    // Fricative and stop burst branches
+                    let fric_val = if fric_amp > 0.001 {
+                        fric_amp * self.resonator_fric.process(noise_sample) * 0.45
+                    } else {
+                        0.0
+                    };
+                    let burst_val = if burst_amp > 0.001 {
+                        burst_amp * self.resonator_burst.process(noise_sample) * 0.65
+                    } else {
+                        0.0
+                    };
+
+                    let mixed = 0.45 * vocal_rad + fric_val + burst_val;
+                    let audio_sample = mixed.clamp(-1.0, 1.0);
                     output_audio.push(audio_sample);
                 }
             }
