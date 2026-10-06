@@ -250,6 +250,34 @@ const preRenderedSamples = [
     desc: 'Elevated pitch tension and accelerated articulation for terrain caution.'
   },
   {
+    title: 'LAUGHTER MID-SENTENCE',
+    file: 'sonon_neural_laughing_mid_sentence.wav',
+    engine: 'Paralinguistic',
+    tagClass: 'emerald',
+    desc: 'Hearty mid-sentence laughter via [laughter] bracket tag with glottal tremolo.'
+  },
+  {
+    title: 'CONVERSATIONAL GIGGLE',
+    file: 'sonon_neural_giggle_conversational.wav',
+    engine: 'Paralinguistic',
+    tagClass: 'emerald',
+    desc: 'Natural expressive giggling mid-sentence via [giggle] paralinguistic tag.'
+  },
+  {
+    title: 'TACTICAL EXASPERATED SIGH',
+    file: 'sonon_neural_sigh_tactical.wav',
+    engine: 'Paralinguistic',
+    tagClass: 'cyan',
+    desc: 'Aspirated deep breath release via [sigh] tag on male commander persona.'
+  },
+  {
+    title: 'RAW ENGLISH INTENT (LAUGH)',
+    file: 'sonon_neural_raw_intent_inference.wav',
+    engine: 'Intent Inference',
+    tagClass: 'emerald',
+    desc: 'Automatic intent detection from raw English ("Haha, look at the telemetry!") without explicit brackets.'
+  },
+  {
     title: 'TAKEOFF',
     file: 'takeoff_edge_runtime.wav',
     engine: 'Edge Runtime',

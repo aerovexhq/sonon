@@ -133,8 +133,9 @@ pub use pcen::{PcenConfig, PcenFilter};
 pub use phonetic::{
     encode_wav_16bit, write_wav_file, AerospacePhoneticNormalizer, BiquadFilter,
     ExemplarVariationConfig, FormantTarget, G2pEngine, IntonationContour, KlattSynthesizer,
-    LiljencrantsFantPulse, Phoneme, PhonemeSegment, SononAcousticMaster,
-    SyntheticExemplarGenerator, SyntheticExemplarMetadata, VocalAccent,
+    LiljencrantsFantPulse, ParalinguisticChunk, ParalinguisticIntentParser, ParalinguisticTag,
+    Phoneme, PhonemeSegment, SononAcousticMaster, SyntheticExemplarGenerator,
+    SyntheticExemplarMetadata, VocalAccent,
 };
 pub use psychoacoustic::{
     atmospheric_absorption_db_km, bark_to_freq, freq_to_bark, threshold_in_quiet_db,

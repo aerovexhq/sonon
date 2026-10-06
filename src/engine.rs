@@ -28,8 +28,8 @@ use crate::notch::RotorHarmonicNotchBank;
 use crate::ormia::{OrmiaConfig, OrmiaDirectionEstimator, OrmiaTelemetry};
 use crate::pcen::{PcenConfig, PcenFilter};
 use crate::phonetic::{
-    AerospacePhoneticNormalizer, G2pEngine, KlattSynthesizer, SononAcousticMaster,
-    SyntheticExemplarGenerator, VocalAccent,
+    AerospacePhoneticNormalizer, G2pEngine, KlattSynthesizer, ParalinguisticIntentParser,
+    SononAcousticMaster, SyntheticExemplarGenerator, VocalAccent,
 };
 use crate::psychoacoustic::{AcousticStealthReport, PsychoacousticConfig, PsychoacousticStealthEngine};
 use crate::zero_shot::{
@@ -2684,7 +2684,19 @@ impl SononEngine {
         let mut master = SononAcousticMaster::new(sample_rate);
         master.process_in_place(samples, apply_warmth);
     }
+
+    /// Parse text containing industry-standard bracketed paralinguistic tags into structured speech and vocalization chunks.
+    pub fn parse_paralinguistic_tags(&self, text: &str) -> Vec<ParalinguisticChunk> {
+        ParalinguisticIntentParser::new().parse_bracketed_tags(text)
+    }
+
+    /// Infer conversational intent from raw English and inject industry-standard paralinguistic tags.
+    pub fn infer_paralinguistic_intent(&self, text: &str) -> String {
+        ParalinguisticIntentParser::new().infer_intent_and_inject_tags(text)
+    }
 }
+
+pub use crate::phonetic::{ParalinguisticChunk, ParalinguisticTag};
 
 /// High-level voice persona profile for neural speech synthesis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

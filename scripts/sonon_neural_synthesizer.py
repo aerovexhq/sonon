@@ -199,6 +199,44 @@ class SononNeuralVoiceEngine:
 
         return profiles
 
+    def parse_paralinguistic_chunks(self, text: str) -> list[tuple[str, str]]:
+        """Parse text into speech and non-verbal vocalization chunks, inferring raw English intent if needed."""
+        import re
+
+        # 1. If no brackets, infer intent from raw conversational English
+        if "[" not in text:
+            raw_markers = {
+                "haha": "[laughter]", "hahaha": "[laughter]", "lol": "[laughter]", "lmao": "[laughter]",
+                "hehe": "[giggle]", "hehehe": "[giggle]",
+                "phew": "[sigh]", "whew": "[sigh]",
+                "ahem": "[throat-clearing]",
+            }
+            words = text.split()
+            enriched = []
+            for w in words:
+                clean = w.strip(".,;:!?()[]{}'\"").lower()
+                suffix = w[len(w.rstrip(".,;:!?()[]{}'\"")):]
+                if clean in raw_markers:
+                    enriched.append(f"{raw_markers[clean]}{suffix}")
+                else:
+                    enriched.append(w)
+            text = " ".join(enriched)
+
+        # 2. Split by bracketed tokens
+        pattern = re.compile(r'(\[[a-zA-Z_\-]+\])')
+        parts = pattern.split(text)
+        chunks = []
+        for p in parts:
+            p_strip = p.strip()
+            if not p_strip:
+                continue
+            if p_strip.startswith('[') and p_strip.endswith(']'):
+                tag = p_strip[1:-1].lower()
+                chunks.append(('vocalization', tag))
+            else:
+                chunks.append(('speech', p_strip))
+        return chunks
+
     def synthesize(
         self,
         text: str,
@@ -208,7 +246,7 @@ class SononNeuralVoiceEngine:
         apply_mastering: bool = True,
         apply_aerospace_norm: bool = True,
     ) -> tuple[np.ndarray, int]:
-        """Synthesize high-fidelity speech from text using specified voice profile and situational urgency."""
+        """Synthesize high-fidelity speech from text with paralinguistics (laughter, giggles, sighs) and urgency."""
         if apply_aerospace_norm:
             norm_text = self.normalizer.normalize(text)
         else:
@@ -221,23 +259,108 @@ class SononNeuralVoiceEngine:
         else:
             voice_style = np.copy(self.voice_profiles["conversational_natural"])
 
-        # Urgency prosody modulation: modify speed and style latent energy
+        # Urgency prosody modulation
         effective_speed = speed
         if urgency == "caution":
             effective_speed *= 1.08
-            # Modulate style vector tension
             voice_style *= 1.05
         elif urgency == "emergency":
             effective_speed *= 1.18
             voice_style *= 1.12
 
         t0 = time.time()
-        raw_samples, sample_rate = self.kokoro.create(
-            text=norm_text,
-            voice=voice_style,
-            speed=effective_speed,
-            lang="en-us",
-        )
+        chunks = self.parse_paralinguistic_chunks(norm_text)
+
+        # Fast path for single standard speech chunk
+        if len(chunks) == 1 and chunks[0][0] == 'speech':
+            raw_samples, sample_rate = self.kokoro.create(
+                text=chunks[0][1],
+                voice=voice_style,
+                speed=effective_speed,
+                lang="en-us",
+            )
+        else:
+            sample_rate = 24000
+            audio_segments = []
+            pause_samples = int(0.06 * sample_rate)
+            pause_buf = np.zeros(pause_samples, dtype=np.float32)
+
+            for chunk_type, content in chunks:
+                if chunk_type == 'speech':
+                    seg, _ = self.kokoro.create(
+                        text=content,
+                        voice=voice_style,
+                        speed=effective_speed,
+                        lang="en-us",
+                    )
+                    audio_segments.append(seg)
+                    audio_segments.append(pause_buf)
+                elif chunk_type == 'vocalization':
+                    if content in ('laughter', 'laugh', 'laughing'):
+                        seg, _ = self.kokoro.create(
+                            text="ha ha ha",
+                            voice=voice_style,
+                            speed=effective_speed * 1.15,
+                            lang="en-us",
+                        )
+                        # Apply rhythmic laughter tremolo
+                        t = np.arange(len(seg)) / sample_rate
+                        seg = seg * (1.0 + 0.16 * np.sin(2.0 * np.pi * 7.5 * t))
+                        audio_segments.append(seg)
+                        audio_segments.append(pause_buf)
+                    elif content in ('giggle', 'giggling'):
+                        seg, _ = self.kokoro.create(
+                            text="tee hee hee",
+                            voice=voice_style,
+                            speed=effective_speed * 1.25,
+                            lang="en-us",
+                        )
+                        audio_segments.append(seg)
+                        audio_segments.append(pause_buf)
+                    elif content in ('chuckle', 'chuckling'):
+                        seg, _ = self.kokoro.create(
+                            text="heh heh",
+                            voice=voice_style,
+                            speed=effective_speed * 1.05,
+                            lang="en-us",
+                        )
+                        audio_segments.append(seg)
+                        audio_segments.append(pause_buf)
+                    elif content in ('sigh', 'sighing'):
+                        seg, _ = self.kokoro.create(
+                            text="ahhh",
+                            voice=voice_style,
+                            speed=effective_speed * 0.85,
+                            lang="en-us",
+                        )
+                        audio_segments.append(seg)
+                        audio_segments.append(pause_buf)
+                    elif content in ('gasp', 'gasping'):
+                        seg, _ = self.kokoro.create(
+                            text="huh",
+                            voice=voice_style,
+                            speed=effective_speed * 1.3,
+                            lang="en-us",
+                        )
+                        audio_segments.append(seg)
+                        audio_segments.append(pause_buf)
+                    elif content in ('throat-clearing', 'throat_clearing', 'ahem'):
+                        seg, _ = self.kokoro.create(
+                            text="ahem",
+                            voice=voice_style,
+                            speed=effective_speed,
+                            lang="en-us",
+                        )
+                        audio_segments.append(seg)
+                        audio_segments.append(pause_buf)
+                    elif content == 'pause':
+                        audio_segments.append(np.zeros(int(0.25 * sample_rate), dtype=np.float32))
+
+            if audio_segments:
+                raw_samples = np.concatenate(audio_segments)
+            else:
+                raw_samples = np.zeros(sample_rate, dtype=np.float32)
+
         synth_time = time.time() - t0
         audio_dur = len(raw_samples) / sample_rate
         rtf = synth_time / max(audio_dur, 0.01)
@@ -329,6 +452,38 @@ def run_test_synthesis():
             "speed": 1.0,
             "text": "FL350 heading HDG090 cleared ILS approach RWY28R. UAV monitoring TCAS.",
             "description": "Aerospace domain acronym and flight level phonetic expansion",
+        },
+        {
+            "filename": "sonon_neural_laughing_mid_sentence.wav",
+            "profile": "conversational_natural",
+            "urgency": "calm",
+            "speed": 1.0,
+            "text": "Well [laughter] that was completely unexpected, wasn't it?",
+            "description": "Mid-sentence hearty laughter paralinguistic token",
+        },
+        {
+            "filename": "sonon_neural_giggle_conversational.wav",
+            "profile": "conversational_natural",
+            "urgency": "calm",
+            "speed": 1.0,
+            "text": "I told him [giggle] not to press the red button during pre-flight checks!",
+            "description": "Conversational giggling mid-sentence paralinguistic token",
+        },
+        {
+            "filename": "sonon_neural_sigh_tactical.wav",
+            "profile": "flight_commander_male",
+            "urgency": "calm",
+            "speed": 1.0,
+            "text": "[sigh] We are going to have to restart the turbine sequence from the beginning.",
+            "description": "Exasperated sigh paralinguistic breath release",
+        },
+        {
+            "filename": "sonon_neural_raw_intent_inference.wav",
+            "profile": "conversational_natural",
+            "urgency": "calm",
+            "speed": 1.0,
+            "text": "Haha, look at the telemetry data! That was incredible.",
+            "description": "Raw conversational English intent understanding without brackets",
         },
     ]
 

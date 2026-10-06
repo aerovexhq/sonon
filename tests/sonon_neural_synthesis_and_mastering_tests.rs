@@ -114,3 +114,27 @@ fn test_acoustic_master_impulse_response_stability() {
         );
     }
 }
+
+#[test]
+fn test_engine_paralinguistic_intent_and_tokens() {
+    let engine = SononEngine::new(16000.0, 512, 160, 13);
+
+    // 1. Explicit bracket tags parsing
+    let tagged_text = "Well [laughter] that was completely unexpected, wasn't it? [giggle]";
+    let chunks = engine.parse_paralinguistic_tags(tagged_text);
+    assert_eq!(chunks.len(), 4);
+    assert_eq!(
+        chunks[1],
+        sonon::ParalinguisticChunk::Vocalization(sonon::ParalinguisticTag::Laughter)
+    );
+    assert_eq!(
+        chunks[3],
+        sonon::ParalinguisticChunk::Vocalization(sonon::ParalinguisticTag::Giggle)
+    );
+
+    // 2. Raw English intent inference
+    let raw_text = "Haha, look at the engine RPM. Phew, we recovered.";
+    let inferred = engine.infer_paralinguistic_intent(raw_text);
+    assert!(inferred.contains("[laughter],"));
+    assert!(inferred.contains("[sigh],"));
+}

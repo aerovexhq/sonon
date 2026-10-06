@@ -2106,5 +2106,219 @@ mod tests_mastering {
         let max_val = samples.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
         assert!((max_val - 0.89125).abs() < 1e-3, "Peak should be normalized to -1.0 dBFS");
     }
+
+    #[test]
+    fn test_paralinguistic_intent_parser() {
+        let parser = ParalinguisticIntentParser::new();
+
+        // 1. Explicit bracket tags
+        let text = "Well [laughter] that was funny, wasn't it? [giggle]";
+        let chunks = parser.parse_bracketed_tags(text);
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], ParalinguisticChunk::Speech("Well".to_string()));
+        assert_eq!(chunks[1], ParalinguisticChunk::Vocalization(ParalinguisticTag::Laughter));
+        assert_eq!(chunks[2], ParalinguisticChunk::Speech("that was funny, wasn't it?".to_string()));
+        assert_eq!(chunks[3], ParalinguisticChunk::Vocalization(ParalinguisticTag::Giggle));
+
+        // 2. Raw English intent inference
+        let raw_english = "Haha, look at that flight plan! Phew, we made it.";
+        let enriched = parser.infer_intent_and_inject_tags(raw_english);
+        assert!(enriched.contains("[laughter],"));
+        assert!(enriched.contains("[sigh],"));
+    }
+}
+
+// ============================================================================
+// Paralinguistic Non-Verbal Vocalizations & Intent Parsing
+// ============================================================================
+
+/// Industry-standard paralinguistic and non-verbal vocalization tags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ParalinguisticTag {
+    /// Full hearty laughter mid-sentence or standalone.
+    Laughter,
+    /// Light, higher-pitched amusement / giggling.
+    Giggle,
+    /// Suppressed, subtle amusement / chuckling.
+    Chuckle,
+    /// Deep breath release / sigh of relief or exhaustion.
+    Sigh,
+    /// Sudden breath intake / surprise or alarm.
+    Gasp,
+    /// Soft, unvoiced whispered speech segment.
+    Whisper,
+    /// Auditory breathing intake or release.
+    Breath,
+    /// Throat clearing or hesitant vocal tract preparation.
+    ThroatClearing,
+    /// Snicker or half-suppressed laugh.
+    Snicker,
+    /// Expressive pause.
+    Pause,
+}
+
+impl ParalinguisticTag {
+    /// Return the canonical industry-standard bracketed tag string (e.g. "[laughter]").
+    pub fn as_tag_str(&self) -> &'static str {
+        match self {
+            Self::Laughter => "[laughter]",
+            Self::Giggle => "[giggle]",
+            Self::Chuckle => "[chuckle]",
+            Self::Sigh => "[sigh]",
+            Self::Gasp => "[gasp]",
+            Self::Whisper => "[whisper]",
+            Self::Breath => "[breath]",
+            Self::ThroatClearing => "[throat-clearing]",
+            Self::Snicker => "[snicker]",
+            Self::Pause => "[pause]",
+        }
+    }
+
+    /// Parse bracketed or special token into ParalinguisticTag if matched.
+    pub fn parse_tag(tag: &str) -> Option<Self> {
+        let cleaned = tag.trim().to_lowercase();
+        let stripped = cleaned
+            .strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
+            .or_else(|| cleaned.strip_prefix('<').and_then(|s| s.strip_suffix('>')))
+            .unwrap_or(&cleaned);
+
+        match stripped {
+            "laughter" | "laugh" | "laughing" => Some(Self::Laughter),
+            "giggle" | "giggling" => Some(Self::Giggle),
+            "chuckle" | "chuckling" => Some(Self::Chuckle),
+            "sigh" | "sighing" => Some(Self::Sigh),
+            "gasp" | "gasping" => Some(Self::Gasp),
+            "whisper" | "whispering" => Some(Self::Whisper),
+            "breath" | "inhale" | "exhale" => Some(Self::Breath),
+            "throat-clearing" | "throat_clearing" | "cough" | "ahem" => Some(Self::ThroatClearing),
+            "snicker" | "snickering" => Some(Self::Snicker),
+            "pause" => Some(Self::Pause),
+            _ => None,
+        }
+    }
+
+    /// Return phonetically realizable representation for phonetic modeling.
+    pub fn to_phonetic_expansion(&self) -> &'static str {
+        match self {
+            Self::Laughter => "ha ha ha",
+            Self::Giggle => "tee hee hee",
+            Self::Chuckle => "heh heh",
+            Self::Sigh => "ahhh",
+            Self::Gasp => "huh",
+            Self::Whisper => "",
+            Self::Breath => "hh",
+            Self::ThroatClearing => "ahem",
+            Self::Snicker => "snrk",
+            Self::Pause => "...",
+        }
+    }
+}
+
+/// Token or event in paralinguistic speech stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ParalinguisticChunk {
+    /// Spoken textual segment.
+    Speech(String),
+    /// Non-verbal paralinguistic vocalization.
+    Vocalization(ParalinguisticTag),
+}
+
+/// Parser and raw English intent detector for non-verbal vocalizations and bracket tags.
+#[derive(Debug, Clone, Default)]
+pub struct ParalinguisticIntentParser;
+
+impl ParalinguisticIntentParser {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Parse input text containing explicit bracket tags (e.g. "Well [laughter] that was funny")
+    /// into structured chunks of speech and vocalizations.
+    pub fn parse_bracketed_tags(&self, text: &str) -> Vec<ParalinguisticChunk> {
+        let mut chunks = Vec::new();
+        let mut current_speech = String::new();
+        let mut in_bracket = false;
+        let mut bracket_content = String::new();
+
+        for ch in text.chars() {
+            if ch == '[' {
+                if !current_speech.trim().is_empty() {
+                    chunks.push(ParalinguisticChunk::Speech(current_speech.trim().to_string()));
+                    current_speech.clear();
+                }
+                in_bracket = true;
+                bracket_content.clear();
+            } else if ch == ']' {
+                if in_bracket {
+                    if let Some(tag) = ParalinguisticTag::parse_tag(&format!("[{}]", bracket_content)) {
+                        chunks.push(ParalinguisticChunk::Vocalization(tag));
+                    } else {
+                        current_speech.push('[');
+                        current_speech.push_str(&bracket_content);
+                        current_speech.push(']');
+                    }
+                    in_bracket = false;
+                    bracket_content.clear();
+                } else {
+                    current_speech.push(ch);
+                }
+            } else if in_bracket {
+                bracket_content.push(ch);
+            } else {
+                current_speech.push(ch);
+            }
+        }
+
+        if !current_speech.trim().is_empty() {
+            chunks.push(ParalinguisticChunk::Speech(current_speech.trim().to_string()));
+        }
+
+        chunks
+    }
+
+    /// Infer paralinguistic intent from raw conversational English (e.g. "Haha, look at that!").
+    /// Automatically detects amused, exasperated, or startled intent and injects bracketed tags.
+    pub fn infer_intent_and_inject_tags(&self, text: &str) -> String {
+        if text.contains('[') && text.contains(']') {
+            return text.to_string();
+        }
+
+        let mut words: Vec<String> = Vec::new();
+        for word in text.split_whitespace() {
+            let clean = word.trim_matches(|c: char| c.is_ascii_punctuation()).to_lowercase();
+            let punct: String = word
+                .chars()
+                .rev()
+                .take_while(|c| c.is_ascii_punctuation())
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+
+            match clean.as_str() {
+                "haha" | "hahaha" | "lol" | "lmao" => {
+                    words.push(format!("[laughter]{}", punct));
+                }
+                "hehe" | "hehehe" => {
+                    words.push(format!("[giggle]{}", punct));
+                }
+                "phew" | "whew" => {
+                    words.push(format!("[sigh]{}", punct));
+                }
+                "whoa" | "gosh" | "yikes" => {
+                    words.push(format!("[gasp] {}{}", clean, punct));
+                }
+                "ahem" => {
+                    words.push(format!("[throat-clearing]{}", punct));
+                }
+                _ => {
+                    words.push(word.to_string());
+                }
+            }
+        }
+
+        words.join(" ")
+    }
 }
 
