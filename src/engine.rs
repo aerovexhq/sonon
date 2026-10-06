@@ -18,6 +18,7 @@ use crate::dtw::{
 };
 use crate::flow_matching::{CfmConfig, CfmSpeechSynthesizer, FlowSolverScheme};
 use crate::vocoder::{BigVganVocoder, VocoderConfig};
+use crate::wavelet_synthesis::{WaveletPhysicalFlowSynthesizer, WaveletSynthesizerConfig};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -157,6 +158,7 @@ pub struct SononEngine {
     forced_aligner: Option<CtcForcedAligner>,
     cfm_synthesizer: Option<CfmSpeechSynthesizer>,
     neural_vocoder: Option<BigVganVocoder>,
+    wavelet_physical_synthesizer: Option<WaveletPhysicalFlowSynthesizer>,
 }
 
 impl SononEngine {
@@ -253,6 +255,7 @@ impl SononEngine {
             forced_aligner: None,
             cfm_synthesizer: None,
             neural_vocoder: None,
+            wavelet_physical_synthesizer: None,
         }
     }
 
@@ -2583,6 +2586,45 @@ impl SononEngine {
     ) -> Result<Vec<f32>, String> {
         let mel_frames = self.synthesize_speech_latent(text, speaker_ref, num_flow_steps, scheme)?;
         self.synthesize_waveform_from_mel(&mel_frames)
+    }
+
+    /// Enable Hybrid Physical-Neural Source-Filter (P-NSF) & Dyadic Wavelet Flow Matching speech synthesizer.
+    pub fn enable_wavelet_physical_synthesizer(&mut self, config: WaveletSynthesizerConfig) {
+        self.wavelet_physical_synthesizer = Some(WaveletPhysicalFlowSynthesizer::new(config));
+    }
+
+    /// Disable Hybrid Physical-Neural Wavelet Flow Matching synthesizer.
+    pub fn disable_wavelet_physical_synthesizer(&mut self) {
+        self.wavelet_physical_synthesizer = None;
+    }
+
+    /// Access reference to active Wavelet Physical Flow synthesizer if configured.
+    pub fn wavelet_physical_synthesizer(&self) -> Option<&WaveletPhysicalFlowSynthesizer> {
+        self.wavelet_physical_synthesizer.as_ref()
+    }
+
+    /// Access mutable reference to active Wavelet Physical Flow synthesizer if configured.
+    pub fn wavelet_physical_synthesizer_mut(&mut self) -> Option<&mut WaveletPhysicalFlowSynthesizer> {
+        self.wavelet_physical_synthesizer.as_mut()
+    }
+
+    /// Synthesize speech audio waveform from text and target fundamental frequency
+    /// using Hybrid Physical-Neural Source-Filter & Dyadic Wavelet Flow Matching.
+    pub fn synthesize_physical_wavelet_speech(
+        &self,
+        text: &str,
+        f0_target: f32,
+        num_steps: usize,
+    ) -> Result<Vec<f32>, String> {
+        match &self.wavelet_physical_synthesizer {
+            Some(synth) => Ok(synth.synthesize(
+                text,
+                f0_target,
+                num_steps,
+                synth.config().default_solver_scheme,
+            )),
+            None => Err("Wavelet physical flow synthesizer is not enabled".to_string()),
+        }
     }
 }
 

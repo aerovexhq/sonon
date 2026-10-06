@@ -51,6 +51,7 @@ pub mod conformal;
 pub mod dataset_ingest;
 pub mod flow_matching;
 pub mod vocoder;
+pub mod wavelet_synthesis;
 
 pub use vocoder::{
     bessel_i0, kaiser_window, normalized_sinc, snake_beta_scalar, AntiAliasedAmpBlock,
@@ -188,6 +189,10 @@ pub use ctc_beam_search::{
 pub use psola::{
     GciConfig, GciDetector, PitchMark, ProsodicEnsembleGenerator, ProsodicVariantSpec,
     PsolaConfig, PsolaModifier,
+};
+pub use wavelet_synthesis::{
+    CalderonWaveletInverter, DyadicMorletCwt, GlottalFlowGenerator, PortHamiltonianVocalFold,
+    WaveletPhysicalFlowSynthesizer, WaveletScalogram, WaveletSynthesizerConfig,
 };
 
 
