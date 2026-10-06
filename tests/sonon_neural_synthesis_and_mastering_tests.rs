@@ -138,3 +138,20 @@ fn test_engine_paralinguistic_intent_and_tokens() {
     assert!(inferred.contains("[laughter],"));
     assert!(inferred.contains("[sigh],"));
 }
+
+#[test]
+fn test_affective_vector_and_structured_intent_inference() {
+    let engine = SononEngine::new(16000.0, 512, 160, 13);
+
+    let v1 = sonon::AffectiveVector::new(0.8, 0.7, 0.5);
+    let v2 = sonon::AffectiveVector::new(0.0, 0.1, 0.5);
+    assert!(v1.distance(&v2) > 0.9);
+
+    let result = engine.infer_conversational_intent("Haha, what a remarkable maneuver!");
+    assert_eq!(result.detected_tag, Some(sonon::ParalinguisticTag::Laughter));
+    assert!(result.confidence >= 0.8);
+    assert!(result.affective_state.valence > 0.5);
+    assert!(result.affective_state.arousal > 0.5);
+    assert!(result.injected_text.contains("[laughter],"));
+}
+

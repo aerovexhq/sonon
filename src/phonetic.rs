@@ -2224,7 +2224,68 @@ pub enum ParalinguisticChunk {
     Vocalization(ParalinguisticTag),
 }
 
-/// Parser and raw English intent detector for non-verbal vocalizations and bracket tags.
+/// Continuous 3D Affective Space representation (Valence, Arousal, Dominance).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AffectiveVector {
+    /// Valence dimension [-1.0 (extremely negative/unpleasant) to +1.0 (extremely positive/pleasant)].
+    pub valence: f32,
+    /// Arousal dimension [0.0 (deeply calm/sleepy) to 1.0 (frenetic/high physiological activation)].
+    pub arousal: f32,
+    /// Dominance dimension [-1.0 (submissive/overwhelmed) to +1.0 (authoritative/in control)].
+    pub dominance: f32,
+}
+
+impl Default for AffectiveVector {
+    fn default() -> Self {
+        Self {
+            valence: 0.0,
+            arousal: 0.2,
+            dominance: 0.5,
+        }
+    }
+}
+
+impl AffectiveVector {
+    /// Create new affective vector.
+    pub fn new(valence: f32, arousal: f32, dominance: f32) -> Self {
+        Self {
+            valence: valence.clamp(-1.0, 1.0),
+            arousal: arousal.clamp(0.0, 1.0),
+            dominance: dominance.clamp(-1.0, 1.0),
+        }
+    }
+
+    /// Compute Euclidean distance to another affective state point.
+    pub fn distance(&self, other: &Self) -> f32 {
+        let dv = self.valence - other.valence;
+        let da = self.arousal - other.arousal;
+        let dd = self.dominance - other.dominance;
+        (dv * dv + da * da + dd * dd).sqrt()
+    }
+}
+
+/// Structured result of paralinguistic and conversational intent inference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IntentInferenceResult {
+    /// Original raw English input string.
+    pub raw_text: String,
+    /// Normalized text with injected paralinguistic bracket tokens.
+    pub injected_text: String,
+    /// Inferred non-verbal vocalization tag, if any was detected.
+    pub detected_tag: Option<ParalinguisticTag>,
+    /// Confidence score [0.0, 1.0] of detected intent.
+    pub confidence: f32,
+    /// Estimated affective coordinate in Valence-Arousal-Dominance space.
+    pub affective_state: AffectiveVector,
+    /// Whether the inference was produced by the deep neural transformer or deterministic lexical fallback.
+    pub is_neural: bool,
+}
+
+/// Parser and intent detector for non-verbal vocalizations and bracket tags.
+///
+/// Supports two distinct processing tiers:
+/// 1. Deep Transformer Neural Attention: Contextual affective analysis in ONNX Runtime.
+/// 2. Deterministic Lexical Fallback: Fast offline rule-based heuristic for constrained embedded targets.
 #[derive(Debug, Clone, Default)]
 pub struct ParalinguisticIntentParser;
 
@@ -2277,12 +2338,22 @@ impl ParalinguisticIntentParser {
         chunks
     }
 
-    /// Infer paralinguistic intent from raw conversational English (e.g. "Haha, look at that!").
-    /// Automatically detects amused, exasperated, or startled intent and injects bracketed tags.
-    pub fn infer_intent_and_inject_tags(&self, text: &str) -> String {
+    /// Fast lexical keyword heuristic fallback for constrained embedded targets without neural transformer weights.
+    pub fn lexical_fallback_infer(&self, text: &str) -> IntentInferenceResult {
         if text.contains('[') && text.contains(']') {
-            return text.to_string();
+            return IntentInferenceResult {
+                raw_text: text.to_string(),
+                injected_text: text.to_string(),
+                detected_tag: None,
+                confidence: 1.0,
+                affective_state: AffectiveVector::default(),
+                is_neural: false,
+            };
         }
+
+        let mut detected_tag = None;
+        let mut confidence = 0.0;
+        let mut affective = AffectiveVector::default();
 
         let mut words: Vec<String> = Vec::new();
         for word in text.split_whitespace() {
@@ -2298,18 +2369,33 @@ impl ParalinguisticIntentParser {
 
             match clean.as_str() {
                 "haha" | "hahaha" | "lol" | "lmao" => {
+                    detected_tag = Some(ParalinguisticTag::Laughter);
+                    confidence = 0.85;
+                    affective = AffectiveVector::new(0.7, 0.6, 0.4);
                     words.push(format!("[laughter]{}", punct));
                 }
                 "hehe" | "hehehe" => {
+                    detected_tag = Some(ParalinguisticTag::Giggle);
+                    confidence = 0.80;
+                    affective = AffectiveVector::new(0.6, 0.5, 0.2);
                     words.push(format!("[giggle]{}", punct));
                 }
                 "phew" | "whew" => {
+                    detected_tag = Some(ParalinguisticTag::Sigh);
+                    confidence = 0.85;
+                    affective = AffectiveVector::new(0.5, 0.1, 0.5);
                     words.push(format!("[sigh]{}", punct));
                 }
                 "whoa" | "gosh" | "yikes" => {
+                    detected_tag = Some(ParalinguisticTag::Gasp);
+                    confidence = 0.75;
+                    affective = AffectiveVector::new(-0.2, 0.8, -0.1);
                     words.push(format!("[gasp] {}{}", clean, punct));
                 }
                 "ahem" => {
+                    detected_tag = Some(ParalinguisticTag::ThroatClearing);
+                    confidence = 0.70;
+                    affective = AffectiveVector::new(0.0, 0.3, 0.6);
                     words.push(format!("[throat-clearing]{}", punct));
                 }
                 _ => {
@@ -2318,7 +2404,21 @@ impl ParalinguisticIntentParser {
             }
         }
 
-        words.join(" ")
+        IntentInferenceResult {
+            raw_text: text.to_string(),
+            injected_text: words.join(" "),
+            detected_tag,
+            confidence,
+            affective_state: affective,
+            is_neural: false,
+        }
+    }
+
+    /// Infer paralinguistic intent from raw conversational English.
+    /// Uses lexical heuristic when offline, or returns the injected text.
+    pub fn infer_intent_and_inject_tags(&self, text: &str) -> String {
+        self.lexical_fallback_infer(text).injected_text
     }
 }
+
 

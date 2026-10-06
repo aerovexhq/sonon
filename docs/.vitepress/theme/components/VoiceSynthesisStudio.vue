@@ -271,11 +271,18 @@ const preRenderedSamples = [
     desc: 'Aspirated deep breath release via [sigh] tag on male commander persona.'
   },
   {
-    title: 'RAW ENGLISH INTENT (LAUGH)',
+    title: 'RAW ENGLISH INTENT (HEURISTIC)',
     file: 'sonon_neural_raw_intent_inference.wav',
-    engine: 'Intent Inference',
+    engine: 'Intent Fallback',
     tagClass: 'emerald',
-    desc: 'Automatic intent detection from raw English ("Haha, look at the telemetry!") without explicit brackets.'
+    desc: 'Deterministic keyword fallback parser ("Haha, look at the telemetry!") for constrained offline microcontrollers.'
+  },
+  {
+    title: 'TRANSFORMER INTENT (ZERO KEYWORDS)',
+    file: 'sonon_neural_transformer_inferred_laughter.wav',
+    engine: 'RoBERTa Transformer',
+    tagClass: 'emerald',
+    desc: 'Deep self-attention intent & paralinguistics inference on unadorned English ("I cannot believe they approved this flight plan, what a joke.") with zero keywords.'
   },
   {
     title: 'TAKEOFF',

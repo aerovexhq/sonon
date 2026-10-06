@@ -2690,13 +2690,19 @@ impl SononEngine {
         ParalinguisticIntentParser::new().parse_bracketed_tags(text)
     }
 
+    /// Infer conversational intent and affective state from raw English.
+    pub fn infer_conversational_intent(&self, text: &str) -> IntentInferenceResult {
+        ParalinguisticIntentParser::new().lexical_fallback_infer(text)
+    }
+
     /// Infer conversational intent from raw English and inject industry-standard paralinguistic tags.
     pub fn infer_paralinguistic_intent(&self, text: &str) -> String {
         ParalinguisticIntentParser::new().infer_intent_and_inject_tags(text)
     }
 }
 
-pub use crate::phonetic::{ParalinguisticChunk, ParalinguisticTag};
+pub use crate::phonetic::{AffectiveVector, IntentInferenceResult, ParalinguisticChunk, ParalinguisticTag};
+
 
 /// High-level voice persona profile for neural speech synthesis.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

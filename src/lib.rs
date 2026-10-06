@@ -131,10 +131,10 @@ pub use ormia::{
 };
 pub use pcen::{PcenConfig, PcenFilter};
 pub use phonetic::{
-    encode_wav_16bit, write_wav_file, AerospacePhoneticNormalizer, BiquadFilter,
-    ExemplarVariationConfig, FormantTarget, G2pEngine, IntonationContour, KlattSynthesizer,
-    LiljencrantsFantPulse, ParalinguisticChunk, ParalinguisticIntentParser, ParalinguisticTag,
-    Phoneme, PhonemeSegment, SononAcousticMaster, SyntheticExemplarGenerator,
+    encode_wav_16bit, write_wav_file, AerospacePhoneticNormalizer, AffectiveVector, BiquadFilter,
+    ExemplarVariationConfig, FormantTarget, G2pEngine, IntentInferenceResult, IntonationContour,
+    KlattSynthesizer, LiljencrantsFantPulse, ParalinguisticChunk, ParalinguisticIntentParser,
+    ParalinguisticTag, Phoneme, PhonemeSegment, SononAcousticMaster, SyntheticExemplarGenerator,
     SyntheticExemplarMetadata, VocalAccent,
 };
 pub use psychoacoustic::{
