@@ -35,6 +35,8 @@ pub struct AudioQualityConfig {
     pub max_spectral_flatness: f32,
     /// Clipping threshold amplitude (default 0.994 ~ -0.05 dBFS).
     pub clipping_threshold: f32,
+    /// Minimum allowable phonetic CTC alignment log-likelihood per frame (default: -8.5, foundation curation: -4.50).
+    pub min_alignment_log_likelihood: f32,
 }
 
 impl Default for AudioQualityConfig {
@@ -46,6 +48,7 @@ impl Default for AudioQualityConfig {
             max_dc_offset: 0.03,
             max_spectral_flatness: 0.45,
             clipping_threshold: 0.994,
+            min_alignment_log_likelihood: -8.5,
         }
     }
 }
@@ -337,6 +340,7 @@ pub struct CtcForcedAligner {
     frame_size: usize,
     hop_size: usize,
     num_mel: usize,
+    min_log_likelihood: f32,
     window: Window,
     fft: FftProcessor,
     mel: MelFilterbank,
@@ -357,10 +361,27 @@ impl CtcForcedAligner {
             frame_size,
             hop_size,
             num_mel,
+            min_log_likelihood: -8.5,
             window,
             fft,
             mel,
         }
+    }
+
+    /// Set minimum allowable phonetic CTC alignment log-likelihood per frame (builder pattern).
+    pub fn with_min_log_likelihood(mut self, min_ll: f32) -> Self {
+        self.min_log_likelihood = min_ll;
+        self
+    }
+
+    /// Update minimum allowable phonetic CTC alignment log-likelihood per frame.
+    pub fn set_min_log_likelihood(&mut self, min_ll: f32) {
+        self.min_log_likelihood = min_ll;
+    }
+
+    /// Return minimum allowable phonetic CTC alignment log-likelihood per frame.
+    pub fn min_log_likelihood(&self) -> f32 {
+        self.min_log_likelihood
     }
 
     /// Return active sampling rate in Hz.
@@ -543,7 +564,7 @@ impl CtcForcedAligner {
         let total_log_lik = dp[t_frames - 1][path[t_frames - 1]];
         let mean_ll = total_log_lik / (t_frames as f32);
         let total_dur = (samples.len() as f32) / self.sample_rate;
-        let is_valid = mean_ll > -8.5 && !aligned_words.is_empty();
+        let is_valid = mean_ll >= self.min_log_likelihood && !aligned_words.is_empty();
 
         Ok(PhoneticAlignmentReport {
             transcript: transcript.to_string(),

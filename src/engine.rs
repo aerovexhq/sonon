@@ -2421,6 +2421,11 @@ impl SononEngine {
         self.forced_aligner = Some(CtcForcedAligner::new(self.sample_rate));
     }
 
+    /// Enable phonetic CTC forced aligner with custom minimum log-likelihood threshold.
+    pub fn enable_forced_aligner_with_threshold(&mut self, min_ll: f32) {
+        self.forced_aligner = Some(CtcForcedAligner::new(self.sample_rate).with_min_log_likelihood(min_ll));
+    }
+
     /// Disable phonetic CTC forced aligner.
     pub fn disable_forced_aligner(&mut self) {
         self.forced_aligner = None;
@@ -2429,6 +2434,11 @@ impl SononEngine {
     /// Access reference to active forced aligner if enabled.
     pub fn forced_aligner(&self) -> Option<&CtcForcedAligner> {
         self.forced_aligner.as_ref()
+    }
+
+    /// Access mutable reference to active forced aligner if enabled.
+    pub fn forced_aligner_mut(&mut self) -> Option<&mut CtcForcedAligner> {
+        self.forced_aligner.as_mut()
     }
 
     /// Inspect an audio waveform and generate a detailed non-intrusive quality report.
@@ -2482,10 +2492,16 @@ impl SononEngine {
 
         let cleaned = self.clean_audio_signal(&sample.audio);
         let alignment = self.align_speech_transcript(&cleaned, &sample.transcript)?;
-        if !alignment.is_valid_alignment {
+        let min_ll = if let Some(ref inspector) = self.audio_inspector {
+            inspector.config().min_alignment_log_likelihood
+        } else {
+            -8.5
+        };
+
+        if !alignment.is_valid_alignment || alignment.mean_log_likelihood < min_ll {
             return Err(format!(
-                "Sample '{}' failed alignment verification: log-likelihood = {:.2}",
-                sample.sample_id, alignment.mean_log_likelihood
+                "Sample '{}' failed alignment verification: log-likelihood = {:.2} (min required: {:.2})",
+                sample.sample_id, alignment.mean_log_likelihood, min_ll
             ));
         }
 
