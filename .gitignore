@@ -5,6 +5,7 @@ Cargo.lock
 
 # Strict Voice Privacy: Never commit audio or video recordings
 *.wav
+!docs/public/audio/*.wav
 *.mp4
 *.m4a
 *.aac

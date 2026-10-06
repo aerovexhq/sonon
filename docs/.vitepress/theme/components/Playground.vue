@@ -204,6 +204,41 @@
 
       <!-- TAB 4: Speech Synthesis Lab -->
       <div v-show="currentTab === 'synth'" class="tab-pane">
+        <div class="studio-panel" style="margin-bottom: 1.25rem;">
+          <div class="panel-title" style="display: flex; justify-content: space-between; align-items: center;">
+            <span>On-Device Text-to-Speech Synthesizer</span>
+            <a href="/synthesis" class="chip-btn active" style="text-decoration: none;">Open Dedicated Synthesis Studio &rarr;</a>
+          </div>
+          <p class="panel-desc" style="margin-bottom: 1rem;">
+            Synthesize speech audio directly in your browser using pure safe Rust algorithms with zero neural network latency.
+          </p>
+          <div class="input-group">
+            <label class="input-label">Phrase / Command to Synthesize</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input v-model="synthPhrase" type="text" class="text-input" placeholder="e.g. TAKEOFF, LAND, ABORT MISSION" style="flex: 1;" />
+              <button class="btn btn-primary btn-sm" @click="previewSynthAudio">Synthesize &amp; Listen</button>
+            </div>
+            <div class="preset-chips" style="margin-top: 0.5rem;">
+              <button
+                v-for="preset in ['take off', 'land', 'hold position', 'abort mission', 'waypoint reached', 'status normal']"
+                :key="preset"
+                class="chip-btn"
+                @click="synthPhrase = preset; previewSynthAudio()"
+              >
+                {{ preset }}
+              </button>
+            </div>
+          </div>
+          <div class="input-group" style="margin-top: 1rem;">
+            <label class="input-label">Pitch Fundamental F0 (Hz)</label>
+            <div class="slider-row">
+              <input v-model.number="synthF0" type="range" class="slider" min="80" max="240" step="5" />
+              <span class="slider-val">{{ synthF0 }} Hz</span>
+            </div>
+          </div>
+          <div class="panel-hint" style="margin-top: 0.5rem;">{{ synthStatus }}</div>
+        </div>
+
         <div class="studio-grid">
           <div class="studio-panel">
             <div class="panel-title">Physical Formant Resonators</div>
@@ -228,7 +263,7 @@
                 <span class="slider-val">{{ formantF3 }} Hz</span>
               </div>
             </div>
-            <button class="btn btn-primary btn-sm" @click="synthesizeFormants">Synthesize Vowel Resonance</button>
+            <button class="btn btn-secondary btn-sm" @click="synthesizeFormants">Synthesize Vowel Resonance</button>
           </div>
           <div class="studio-panel">
             <div class="panel-title">Glottal Flow Model (Liljencrants-Fant)</div>

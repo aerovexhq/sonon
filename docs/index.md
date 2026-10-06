@@ -10,7 +10,10 @@ hero:
     alt: Sonon Logo
   actions:
     - theme: brand
-      text: Open Interactive Playground
+      text: Open Voice Synthesis Studio
+      link: /synthesis
+    - theme: alt
+      text: Interactive Audio Lab & Playground
       link: /playground
     - theme: alt
       text: Documentation & Physics

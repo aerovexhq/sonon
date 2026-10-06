@@ -17,10 +17,11 @@ export default defineConfig({
     logo: '/favicon.svg',
     siteTitle: 'Sonon',
     nav: [
+      { text: 'Voice Synthesis', link: '/synthesis' },
+      { text: 'Playground', link: '/playground' },
       { text: 'Guide', link: '/guide/getting-started' },
       { text: 'DSP Physics', link: '/dsp/overview' },
       { text: 'API Reference', link: '/api/rust' },
-      { text: 'Playground', link: '/playground' },
       { text: 'GitHub', link: 'https://github.com/aerovexhq/sonon' }
     ],
     sidebar: {
@@ -64,6 +65,15 @@ export default defineConfig({
           text: 'Interactive Lab',
           items: [
             { text: 'Autonomous Audio Lab', link: '/playground' }
+          ]
+        }
+      ],
+      '/synthesis': [
+        {
+          text: 'Voice Synthesis',
+          items: [
+            { text: 'Voice Synthesis Studio', link: '/synthesis' },
+            { text: 'Formant & Glottal Physics', link: '/dsp/speech-synthesis' }
           ]
         }
       ]
