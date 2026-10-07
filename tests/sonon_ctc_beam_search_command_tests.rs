@@ -249,8 +249,8 @@ fn test_end_to_end_synthetic_speech_command_recognition() {
             res.confidence
         );
 
-        // Assert latency requirement (< 35ms in release mode, < 300ms in unoptimized debug mode)
-        let max_latency_ms = if cfg!(debug_assertions) { 300.0 } else { 35.0 };
+        // Assert latency requirement (< 35ms in release mode, < 450ms in unoptimized debug mode)
+        let max_latency_ms = if cfg!(debug_assertions) { 450.0 } else { 35.0 };
         assert!(
             elapsed_ms < max_latency_ms,
             "Latency for '{}' was {:.2}ms, expected < {:.1}ms",

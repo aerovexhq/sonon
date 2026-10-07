@@ -353,6 +353,11 @@ def synthesize(
             print("Synthesizing continuous 24,000 Hz audio waveform via analytical vocoder inversion...")
             audio = invert_mel_analytical(mel_latents)
 
+        # Tail fadeout to ensure clean decay to silence across all vocoder modes
+        fade_len = min(int(0.18 * SAMPLE_RATE), len(audio) // 4)
+        if fade_len > 0:
+            audio[-fade_len:] *= 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, fade_len)))
+
         # Peak normalization to -1.0 dBFS
         max_val = np.max(np.abs(audio))
         if max_val > 0:
