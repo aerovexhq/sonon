@@ -20,6 +20,11 @@ use crate::flow_matching::{CfmConfig, CfmSpeechSynthesizer, FlowSolverScheme};
 use crate::vocoder::{BigVganVocoder, VocoderConfig};
 use crate::wavelet_synthesis::{WaveletPhysicalFlowSynthesizer, WaveletSynthesizerConfig};
 use crate::edge_runtime::{EdgeSpeechRuntime, StreamingEdgeConfig};
+pub use crate::metacognitive::{
+    AffectiveAcousticModulation, BargeInType, ComputeScalingMode, ConversationalFloorState,
+    InnerMonologueToken, MetacognitiveTelemetry, MetacognitiveVoiceEngine, ProsodicIntent,
+    SelfRepairDirective,
+};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -165,6 +170,7 @@ pub struct SononEngine {
     wavelet_physical_synthesizer: Option<WaveletPhysicalFlowSynthesizer>,
     edge_runtime: Option<EdgeSpeechRuntime>,
     aerospace_normalizer: AerospacePhoneticNormalizer,
+    metacognitive_engine: Option<MetacognitiveVoiceEngine>,
 }
 
 impl SononEngine {
@@ -264,6 +270,7 @@ impl SononEngine {
             wavelet_physical_synthesizer: None,
             edge_runtime: None,
             aerospace_normalizer: AerospacePhoneticNormalizer::new(),
+            metacognitive_engine: None,
         }
     }
 
@@ -2698,6 +2705,67 @@ impl SononEngine {
     /// Infer conversational intent from raw English and inject industry-standard paralinguistic tags.
     pub fn infer_paralinguistic_intent(&self, text: &str) -> String {
         ParalinguisticIntentParser::new().infer_intent_and_inject_tags(text)
+    }
+
+    /// Enable the self-state-aware metacognitive voice engine.
+    pub fn enable_metacognitive_engine(&mut self) {
+        self.metacognitive_engine = Some(MetacognitiveVoiceEngine::new(self.sample_rate as u32));
+    }
+
+    /// Disable the metacognitive voice engine.
+    pub fn disable_metacognitive_engine(&mut self) {
+        self.metacognitive_engine = None;
+    }
+
+    /// Access reference to active metacognitive voice engine if enabled.
+    pub fn metacognitive_engine(&self) -> Option<&MetacognitiveVoiceEngine> {
+        self.metacognitive_engine.as_ref()
+    }
+
+    /// Access mutable reference to active metacognitive voice engine if enabled.
+    pub fn metacognitive_engine_mut(&mut self) -> Option<&mut MetacognitiveVoiceEngine> {
+        self.metacognitive_engine.as_mut()
+    }
+
+    /// Process a duplex audio frame tick through the metacognitive engine.
+    pub fn process_metacognitive_duplex_tick(
+        &mut self,
+        user_mic_rms: f32,
+        is_agent_speaking: bool,
+        frame_duration_ms: f32,
+        current_buffer_samples: usize,
+    ) -> Result<(ConversationalFloorState, Option<BargeInType>), String> {
+        match &mut self.metacognitive_engine {
+            Some(engine) => Ok(engine.process_duplex_tick(
+                user_mic_rms,
+                is_agent_speaking,
+                frame_duration_ms,
+                current_buffer_samples,
+            )),
+            None => Err("Metacognitive voice engine is not enabled".to_string()),
+        }
+    }
+
+    /// Plan an ahead-of-time semantic token in the inner monologue.
+    pub fn plan_inner_monologue_token(
+        &mut self,
+        text: &str,
+        prosodic_intent: ProsodicIntent,
+        target_affect: AffectiveVector,
+        entropy: f32,
+    ) -> Result<SelfRepairDirective, String> {
+        match &mut self.metacognitive_engine {
+            Some(engine) => Ok(engine.plan_upcoming_token(text, prosodic_intent, target_affect, entropy)),
+            None => Err("Metacognitive voice engine is not enabled".to_string()),
+        }
+    }
+
+    /// Query the current metacognitive telemetry snapshot.
+    pub fn metacognitive_telemetry(&self) -> Result<MetacognitiveTelemetry, String> {
+        match &self.metacognitive_engine {
+            Some(engine) => Ok(engine.telemetry()),
+            None => Err("Metacognitive voice engine is not enabled".to_string()),
+        }
     }
 }
 

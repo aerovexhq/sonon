@@ -53,6 +53,15 @@ pub mod flow_matching;
 pub mod vocoder;
 pub mod wavelet_synthesis;
 pub mod edge_runtime;
+pub mod metacognitive;
+
+pub use metacognitive::{
+    AffectiveAcousticModulation, AffectiveTrajectoryTracker, BargeInType,
+    ComputeBudgetAutoregulator, ComputeScalingMode, ConversationalFloorState,
+    EpistemicUncertaintyMonitor, InnerMonologueEngine, InnerMonologueToken,
+    MetacognitiveTelemetry, MetacognitiveVoiceEngine, ProsodicIntent, SelfRepairDirective,
+    TurnManagerConfig, TurnStateManager,
+};
 
 pub use vocoder::{
     bessel_i0, kaiser_window, normalized_sinc, snake_beta_scalar, AntiAliasedAmpBlock,
