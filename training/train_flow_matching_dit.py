@@ -202,6 +202,33 @@ class DiTBlock(nn.Module):
         return x
 
 
+class TextConditioningEncoder(nn.Module):
+    """Byte-level text conditioning encoder matching safe Rust implementation in flow_matching.rs."""
+    def __init__(self, context_dim: int, max_tokens: int = 128):
+        super().__init__()
+        self.context_dim = context_dim
+        self.max_tokens = max_tokens
+        self.embedding = nn.Embedding(256, context_dim)
+        self.proj = nn.Sequential(
+            nn.Linear(context_dim, context_dim),
+            nn.SiLU(),
+            nn.Linear(context_dim, context_dim)
+        )
+
+    def forward(self, byte_tokens: torch.Tensor) -> torch.Tensor:
+        # byte_tokens: (B, L)
+        emb = self.embedding(byte_tokens) # (B, L, context_dim)
+        B, L, D = emb.shape
+        half_dim = D // 2
+        positions = torch.arange(L, dtype=torch.float32, device=byte_tokens.device)[:, None]
+        freqs = torch.exp(-math.log(10000.0) * torch.arange(0, half_dim, dtype=torch.float32, device=byte_tokens.device) / half_dim)[None, :]
+        args = positions * freqs
+        sin_pos = torch.sin(args)
+        cos_pos = torch.cos(args)
+        pos_emb = torch.cat([sin_pos, cos_pos], dim=-1).unsqueeze(0)
+        return self.proj(emb + 0.1 * pos_emb)
+
+
 class FlowMatchingDiT(nn.Module):
     """Non-Autoregressive Diffusion Transformer for Optimal Transport Flow Matching."""
     def __init__(
@@ -229,6 +256,16 @@ class FlowMatchingDiT(nn.Module):
 
         # Context conditioning projection (VAD + prospective tokens)
         self.context_proj = nn.Linear(16, context_dim)
+        # Byte-level text conditioning encoder
+        self.text_encoder = TextConditioningEncoder(context_dim)
+
+    def build_context(self, cond_vector: torch.Tensor, text_tokens: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Combine VAD/prosodic conditioning with text token sequence for cross-attention."""
+        vad_ctx = self.context_proj(cond_vector).unsqueeze(1) # (B, 1, context_dim)
+        if text_tokens is not None:
+            text_ctx = self.text_encoder(text_tokens)         # (B, L, context_dim)
+            return torch.cat([vad_ctx, text_ctx], dim=1)      # (B, 1 + L, context_dim)
+        return vad_ctx
 
     def forward(self, x_t: torch.Tensor, t: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
         # x_t: (B, T, latent_dim)
@@ -272,9 +309,8 @@ class ShardedAcousticDataset(Dataset):
         record = self.samples[idx]
         uuid = record.get("uuid", f"sample_{idx}")
 
-        # Derive approximate shard index (each shard ~475 utterances)
-        shard_idx = idx // 475
-        shard_name = f"shard_{shard_idx:06d}.tar"
+        # Read directly from shard indicated in manifest record
+        shard_name = record.get("shard", f"shard_{idx // 475:06d}.tar")
 
         # Attempt to read WAV from shard
         audio = None
@@ -336,9 +372,17 @@ class ShardedAcousticDataset(Dataset):
         mask_dur = int((infill.get("mask_duration_ms", 250.0) / 1000.0) * (SAMPLE_RATE / HOP_LENGTH))
         mask_span = np.array([max(0, mask_start), min(target_len, mask_start + mask_dur)], dtype=np.int64)
 
+        # Byte-level text tokenization for phonetic cross-attention
+        text = record.get("text", "")
+        byte_tokens = [min(255, b) for b in text.encode("utf-8")[:128]]
+        if len(byte_tokens) < 128:
+            byte_tokens = byte_tokens + [0] * (128 - len(byte_tokens))
+        text_tokens = np.array(byte_tokens, dtype=np.int64)
+
         return {
             "mel": torch.from_numpy(mel),                # (256, 80)
             "cond": torch.from_numpy(cond_vector),       # (16,)
+            "text_tokens": torch.from_numpy(text_tokens),# (128,)
             "mask_span": torch.from_numpy(mask_span)     # (2,)
         }
 
@@ -413,8 +457,9 @@ def train_flow_matching(
             # Target velocity field: u_t = x_1 - (1 - sigma_min) * x_0
             u_t = x_1 - (1.0 - SIGMA_MIN) * x_0
 
-            # Context embedding (B, 1, context_dim)
-            context = model.context_proj(cond_raw).unsqueeze(1)
+            # Context embedding: combined VAD and text token sequence (B, 1 + L, context_dim)
+            text_tokens = batch["text_tokens"].to(device)
+            context = model.build_context(cond_raw, text_tokens)
 
             # Predict velocity field
             v_pred = model(x_t, t, context)

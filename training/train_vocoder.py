@@ -265,8 +265,7 @@ class VocoderDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         record = self.samples[idx]
         uuid = record.get("uuid", f"sample_{idx}")
-        shard_idx = idx // 475
-        shard_name = f"shard_{shard_idx:06d}.tar"
+        shard_name = record.get("shard", f"shard_{idx // 475:06d}.tar")
 
         audio = None
         if shard_name in self.shard_tar_files:

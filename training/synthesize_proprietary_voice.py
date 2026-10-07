@@ -64,6 +64,7 @@ def solve_flow_ode(
 
 
 def synthesize(
+    text: str = "Waypoint Alpha reached. Maintaining altitude three thousand feet.",
     dit_checkpoint: str = DEFAULT_DIT_CHECKPOINT,
     vocoder_checkpoint: str = DEFAULT_VOCODER_CHECKPOINT,
     output_wav: str = DEFAULT_OUTPUT_WAV,
@@ -80,6 +81,7 @@ def synthesize(
         device = torch.device(device_name)
 
     print(f"Proprietary Synthesis target device: {device}")
+    print(f"Synthesizing text: '{text}'")
     os.makedirs(os.path.dirname(output_wav), exist_ok=True)
 
     # 1. Load FlowMatchingDiT model
@@ -92,10 +94,10 @@ def synthesize(
         num_heads=8,
         num_layers=6
     ).to(device)
-    dit_model.load_state_dict(dit_ckpt["model_state_dict"])
+    dit_model.load_state_dict(dit_ckpt["model_state_dict"], strict=False)
     dit_model.eval()
 
-    # 2. Build 3D VAD affective conditioning context
+    # 2. Build 3D VAD affective conditioning context and byte text tokens
     vad = np.array([valence, arousal, dominance], dtype=np.float32)
     lookahead = np.zeros(13, dtype=np.float32)
     lookahead[0] = 3.0   # 3 lookahead tokens
@@ -103,9 +105,14 @@ def synthesize(
     lookahead[2] = 0.25  # Low entropy
     cond_vector = torch.from_numpy(np.concatenate([vad, lookahead])).unsqueeze(0).to(device)
 
-    # Project to context space (1, 1, context_dim)
+    byte_tokens = [min(255, b) for b in text.encode("utf-8")[:128]]
+    if len(byte_tokens) < 128:
+        byte_tokens = byte_tokens + [0] * (128 - len(byte_tokens))
+    text_tokens = torch.tensor([byte_tokens], dtype=torch.int64, device=device)
+
+    # Project to context space (1, 1 + L, context_dim)
     with torch.no_grad():
-        context = dit_model.context_proj(cond_vector).unsqueeze(1)
+        context = dit_model.build_context(cond_vector, text_tokens)
 
         # 3. Solve Flow Matching ODE to synthesize 80-channel mel frames
         seq_len = int((duration_seconds * SAMPLE_RATE) / HOP_LENGTH)
@@ -149,6 +156,7 @@ def synthesize(
 
 def main():
     parser = argparse.ArgumentParser(description="Sonon Proprietary Voice Synthesizer")
+    parser.add_argument("--text", type=str, default="Waypoint Alpha reached. Maintaining altitude three thousand feet.")
     parser.add_argument("--dit_checkpoint", type=str, default=DEFAULT_DIT_CHECKPOINT)
     parser.add_argument("--vocoder_checkpoint", type=str, default=DEFAULT_VOCODER_CHECKPOINT)
     parser.add_argument("--output_wav", type=str, default=DEFAULT_OUTPUT_WAV)
@@ -161,6 +169,7 @@ def main():
     args = parser.parse_args()
 
     synthesize(
+        text=args.text,
         dit_checkpoint=args.dit_checkpoint,
         vocoder_checkpoint=args.vocoder_checkpoint,
         output_wav=args.output_wav,
