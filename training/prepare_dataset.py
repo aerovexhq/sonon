@@ -662,7 +662,16 @@ def main():
 
         # Infer speaker ID from filename or directory hierarchy
         speaker_id = "spk_general"
-        if "_" in stem and stem.split("_")[0].isdigit():
+        if stem.startswith("phase2_vctk_"):
+            parts = stem.split("_")
+            speaker_id = parts[2] if len(parts) > 2 else "spk_vctk"
+        elif stem.startswith("phase2_libri_"):
+            parts = stem.split("_")
+            speaker_id = f"libri_{parts[2]}" if len(parts) > 2 else "spk_libri"
+        elif stem.startswith("phase2_dt_"):
+            spk_match = re.search(r"_spk(\d+)", stem)
+            speaker_id = f"dt_spk_{spk_match.group(1)}" if spk_match else "dt_spk_0"
+        elif "_" in stem and stem.split("_")[0].isdigit():
             speaker_id = f"spk_{stem.split('_')[0]}"
         elif "-" in stem and (stem.startswith("spk") or stem.startswith("spkr")):
             speaker_id = stem.split("-")[0]
@@ -672,7 +681,7 @@ def main():
                 if part.isdigit():
                     speaker_id = f"spk_{part}"
                     break
-                elif part.startswith("spk_") or part.startswith("p") or len(part) > 10:
+                elif part.startswith("spk_") or part.startswith("p"):
                     speaker_id = part
                     break
 

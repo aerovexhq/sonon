@@ -199,36 +199,158 @@ def stage_vctk_partition(parquet_path: Path, target_dir: Path, max_samples: int 
     return staged
 
 
+def stage_libritts_partition(parquet_path: Path, target_dir: Path, max_samples: int = 2500) -> int:
+    """Stage clean studio speech from LibriTTS-R partition."""
+    print(f"--- Staging LibriTTS-R Clean Speech from {parquet_path.name} ---")
+    if not parquet_path.exists():
+        print(f"Error: Parquet {parquet_path} does not exist.")
+        return 0
+
+    table = pq.read_table(parquet_path)
+    d = table.to_pydict()
+
+    staged = 0
+    total_rows = len(d["id"])
+
+    for idx in range(total_rows):
+        if staged >= max_samples:
+            break
+
+        norm_text = (d["text_normalized"][idx] or "").strip()
+        if not norm_text or len(norm_text) < 3:
+            continue
+
+        spk_id = str(d["speaker_id"][idx])
+        item_id = str(d["id"][idx])
+        audio_entry = d["audio"][idx]
+
+        try:
+            with io.BytesIO(audio_entry["bytes"]) as bio:
+                audio, sr = sf.read(bio)
+        except Exception:
+            continue
+
+        dur = len(audio) / float(sr)
+        if dur < 0.85 or dur > 17.5:
+            continue
+
+        audio_24k = resample_if_needed(audio, sr, TARGET_SR)
+        peak = np.max(np.abs(audio_24k))
+        if peak > 1e-4:
+            audio_24k = audio_24k * (0.841 / peak)
+
+        if not verify_audio_sample(audio_24k, TARGET_SR, min_snr=28.0):
+            continue
+
+        stem = f"phase2_libri_{spk_id}_{item_id}"
+        out_wav = target_dir / f"{stem}.wav"
+        out_txt = target_dir / f"{stem}.normalized.txt"
+
+        sf.write(out_wav, audio_24k, TARGET_SR, subtype="PCM_16")
+        out_txt.write_text(norm_text, encoding="utf-8")
+        staged += 1
+
+    unique_spks = len(set(d['speaker_id']))
+    print(f"Staged {staged} verified studio LibriTTS-R utterances across {unique_spks} speakers.")
+    return staged
+
+
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Stage Phase 2 Foundation & Multi-Speaker Timbre Scaling Corpora."
+    )
+    parser.add_argument(
+        "--dailytalk_parquet",
+        type=str,
+        default=None,
+        help="Path to DailyTalk parquet partition file.",
+    )
+    parser.add_argument(
+        "--vctk_parquet",
+        type=str,
+        default=None,
+        help="Path to VCTK parquet partition file.",
+    )
+    parser.add_argument(
+        "--libritts_parquet",
+        type=str,
+        default=None,
+        help="Path to LibriTTS-R parquet partition file.",
+    )
+    parser.add_argument(
+        "--max_dt_turns",
+        type=int,
+        default=2500,
+        help="Maximum DailyTalk turns to stage.",
+    )
+    parser.add_argument(
+        "--max_vctk_samples",
+        type=int,
+        default=1200,
+        help="Maximum VCTK studio samples to stage.",
+    )
+    parser.add_argument(
+        "--max_libri_samples",
+        type=int,
+        default=2500,
+        help="Maximum LibriTTS-R samples to stage.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=str(OUTPUT_DIR),
+        help="Destination directory for staged files.",
+    )
+    parser.add_argument(
+        "--clean_staging",
+        action="store_true",
+        default=True,
+        help="Clean output directory before staging.",
+    )
+    args = parser.parse_args()
+
+    out_dir = Path(args.output_dir)
     print("================================================================================")
     print("Aerovex Sonon: Staging Phase 2 Foundation & Multi-Speaker Timbre Scaling")
     print("================================================================================")
 
-    if OUTPUT_DIR.exists():
-        shutil.rmtree(OUTPUT_DIR)
-    ensure_dir(OUTPUT_DIR)
+    if args.clean_staging and out_dir.exists():
+        shutil.rmtree(out_dir)
+    ensure_dir(out_dir)
 
-    # 1. DailyTalk Partition 1
-    dt_p1 = Path(
-        "/home/usr/.cache/huggingface/hub/datasets--eustlb--dailytalk-conversations-grouped/snapshots/da45fc68950dc27af88a68b78927231292776023/data/train-00001-of-00008-174cc96c22ecd787.parquet"
-    )
-    dt_staged, dt_hes = stage_dailytalk_partition(dt_p1, OUTPUT_DIR, max_turns=2500)
+    total_staged = 0
+    dt_staged, dt_hes = 0, 0
+    vctk_staged = 0
+    libri_staged = 0
 
-    # 2. VCTK Partition 0
-    vctk_p0 = Path(
-        "/home/usr/.cache/huggingface/hub/datasets--jspaulsen--vctk/snapshots/fb74847570d78d2b23e83193d8e55df80e6271b2/data/train-00000-of-00034.parquet"
-    )
-    vctk_staged = stage_vctk_partition(vctk_p0, OUTPUT_DIR, max_samples=1200)
+    if args.dailytalk_parquet:
+        dt_p = Path(args.dailytalk_parquet)
+        dt_staged, dt_hes = stage_dailytalk_partition(dt_p, out_dir, max_turns=args.max_dt_turns)
+        total_staged += dt_staged
 
-    total_staged = dt_staged + vctk_staged
+    if args.vctk_parquet:
+        vctk_p = Path(args.vctk_parquet)
+        vctk_staged = stage_vctk_partition(vctk_p, out_dir, max_samples=args.max_vctk_samples)
+        total_staged += vctk_staged
+
+    if args.libritts_parquet:
+        libri_p = Path(args.libritts_parquet)
+        libri_staged = stage_libritts_partition(libri_p, out_dir, max_samples=args.max_libri_samples)
+        total_staged += libri_staged
 
     print("\n================================================================================")
     print("Phase 2 Foundation Staging Completed Successfully")
     print("================================================================================")
-    print(f"Output Directory:      {OUTPUT_DIR}")
+    print(f"Output Directory:      {out_dir}")
     print(f"Total Staged Files:    {total_staged}")
-    print(f"  - DailyTalk Turns:   {dt_staged} (Hesitations: {dt_hes})")
-    print(f"  - VCTK Utterances:   {vctk_staged}")
+    if dt_staged > 0:
+        print(f"  - DailyTalk Turns:   {dt_staged} (Hesitations: {dt_hes})")
+    if vctk_staged > 0:
+        print(f"  - VCTK Utterances:   {vctk_staged}")
+    if libri_staged > 0:
+        print(f"  - LibriTTS-R Speech: {libri_staged}")
     print("================================================================================")
 
 
