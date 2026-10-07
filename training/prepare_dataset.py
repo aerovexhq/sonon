@@ -44,7 +44,9 @@ SHARD_MAX_SAMPLES = 500  # Up to 500 utterances per shard
 
 # Standardized paralinguistic tag patterns
 PARALINGUISTIC_PATTERNS = [
-    (r"\[laughter\]|\[chuckle\]|\[giggle\]|\[snicker\]|<laughter>|<chuckle>", "[laughter]"),
+    (r"\[chuckle\]|<chuckle>", "[chuckle]"),
+    (r"\[giggle\]|<giggle>", "[giggle]"),
+    (r"\[laughter\]|\[snicker\]|<laughter>", "[laughter]"),
     (r"\[sigh\]|<sigh>", "[sigh]"),
     (r"\[gasp\]|<gasp>", "[gasp]"),
     (r"\[whisper\]|<whisper>", "[whisper]"),
@@ -278,14 +280,26 @@ def extract_paralinguistics_and_affect(
     dominance = 0.50
 
     has_laughter = any(p["tag"] == "[laughter]" for p in paralinguistics)
+    has_chuckle = any(p["tag"] == "[chuckle]" for p in paralinguistics)
+    has_giggle = any(p["tag"] == "[giggle]" for p in paralinguistics)
     has_sigh = any(p["tag"] == "[sigh]" for p in paralinguistics)
     has_gasp = any(p["tag"] == "[gasp]" for p in paralinguistics)
     has_whisper = any(p["tag"] == "[whisper]" for p in paralinguistics)
+    has_throat_clearing = any(p["tag"] == "[throat-clearing]" for p in paralinguistics)
+    has_hesitation = any(p["tag"] == "[hesitation]" for p in paralinguistics)
 
     if has_laughter:
         valence = 0.85
         arousal = 0.70
         dominance = 0.55
+    elif has_giggle:
+        valence = 0.80
+        arousal = 0.65
+        dominance = 0.45
+    elif has_chuckle:
+        valence = 0.75
+        arousal = 0.50
+        dominance = 0.50
     elif has_sigh:
         valence = 0.40
         arousal = 0.25
@@ -298,6 +312,14 @@ def extract_paralinguistics_and_affect(
         valence = 0.50
         arousal = 0.30
         dominance = 0.30
+    elif has_throat_clearing:
+        valence = 0.48
+        arousal = 0.40
+        dominance = 0.50
+    elif has_hesitation:
+        valence = 0.48
+        arousal = 0.35
+        dominance = 0.35
 
     affective_state = {
         "valence": round(valence, 2),
@@ -390,12 +412,12 @@ def load_transcripts_from_file(file_path: str) -> Dict[str, str]:
 class WebDatasetShardPacker:
     """Packages curated audio and JSON metadata into WebDataset .tar shards and Sonon binary archives."""
 
-    def __init__(self, output_dir: Path, shard_prefix: str = "shard", max_samples: int = SHARD_MAX_SAMPLES):
+    def __init__(self, output_dir: Path, shard_prefix: str = "shard", max_samples: int = SHARD_MAX_SAMPLES, start_shard_idx: int = 0):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.shard_prefix = shard_prefix
         self.max_samples = max_samples
-        self.current_shard_idx = 0
+        self.current_shard_idx = start_shard_idx
         self.current_shard_samples = 0
         self.current_tar: Optional[tarfile.TarFile] = None
         self.current_tar_path: Optional[Path] = None
@@ -550,6 +572,17 @@ def main():
         default="",
         help="Optional secondary delivery path to mirror shards (e.g. /D/aerovex_datasets/pilot/)",
     )
+    parser.add_argument(
+        "--start_shard_idx",
+        type=int,
+        default=0,
+        help="Initial index for WebDataset shard numbering (default: 0)",
+    )
+    parser.add_argument(
+        "--append_manifest",
+        action="store_true",
+        help="Append new samples to existing train and validation manifests rather than replacing",
+    )
 
     args = parser.parse_args()
 
@@ -585,7 +618,12 @@ def main():
     # Initialize Shard Packer
     shards_dir = output_path / "shards"
     shards_dir.mkdir(parents=True, exist_ok=True)
-    packer = WebDatasetShardPacker(shards_dir, shard_prefix="shard", max_samples=args.shard_size)
+    packer = WebDatasetShardPacker(
+        shards_dir,
+        shard_prefix="shard",
+        max_samples=args.shard_size,
+        start_shard_idx=args.start_shard_idx,
+    )
 
     curated_records = []
     rejected_count = 0
@@ -701,6 +739,24 @@ def main():
 
     train_data = [curated_records[i] for i in indices[:split_point]]
     val_data = [curated_records[i] for i in indices[split_point:]]
+
+    if args.append_manifest and train_manifest_path.exists():
+        try:
+            with open(train_manifest_path, "r", encoding="utf-8") as f:
+                old_train = json.load(f)
+                if isinstance(old_train, list):
+                    train_data = old_train + train_data
+        except Exception as e:
+            print(f"Warning: Could not load existing train manifest to append: {e}")
+
+    if args.append_manifest and val_manifest_path.exists():
+        try:
+            with open(val_manifest_path, "r", encoding="utf-8") as f:
+                old_val = json.load(f)
+                if isinstance(old_val, list):
+                    val_data = old_val + val_data
+        except Exception as e:
+            print(f"Warning: Could not load existing val manifest to append: {e}")
 
     with open(train_manifest_path, "w", encoding="utf-8") as f:
         json.dump(train_data, f, indent=2)
