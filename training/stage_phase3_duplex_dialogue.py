@@ -259,17 +259,19 @@ def _process_dialogue_cluster(
 
     with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
         sf.write(tmp.name, mono_audio, TARGET_SR, subtype="PCM_16")
-        is_valid, snr_db, _, _ = inspect_and_curate_audio(tmp.name, TARGET_SR, min_snr_db=25.0)
+        is_valid, status_msg, _, metrics = inspect_and_curate_audio(tmp.name, TARGET_SR, min_snr_db=25.0)
 
     if not is_valid:
         return False
+
+    snr_val = float(metrics.get("snr_db", 30.0))
 
     file_prefix = f"duplex_{session_id}_seg{index:04d}"
     wav_path = target_dir / f"{file_prefix}.wav"
     json_path = target_dir / f"{file_prefix}.json"
 
-    # Save stereo WAV
-    sf.write(str(wav_path), stereo_audio, TARGET_SR, subtype="PCM_16")
+    # Save curated mono audio for dataset sharding compatibility
+    sf.write(str(wav_path), mono_audio, TARGET_SR, subtype="PCM_16")
 
     meta = {
         "uuid": f"duplex_{session_id}_{index:04d}",
@@ -279,10 +281,10 @@ def _process_dialogue_cluster(
         "locale": "en-US",
         "sample_rate": TARGET_SR,
         "duration_seconds": round(duration, 3),
-        "snr_db": round(float(snr_db), 2),
+        "snr_db": round(snr_val, 2),
         "transcript_raw": combined_transcript,
         "transcript_normalized": combined_transcript,
-        "channels": 2,
+        "channels": 1,
         "turn_metadata": {
             "is_duplex": True,
             "turns_in_segment": len(cluster),
@@ -351,10 +353,12 @@ def stage_expresso_parquet(parquet_path: Path, target_dir: Path, max_samples: in
         # DSP quality inspection
         with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
             sf.write(tmp.name, audio_data, TARGET_SR, subtype="PCM_16")
-            is_valid, snr_db, _, _ = inspect_and_curate_audio(tmp.name, TARGET_SR, min_snr_db=28.0)
+            is_valid, status_msg, _, metrics = inspect_and_curate_audio(tmp.name, TARGET_SR, min_snr_db=28.0)
 
         if not is_valid:
             continue
+
+        snr_val = float(metrics.get("snr_db", 30.0))
 
         file_prefix = f"expresso_{parquet_path.stem}_{i:05d}"
         wav_path = target_dir / f"{file_prefix}.wav"
@@ -371,7 +375,7 @@ def stage_expresso_parquet(parquet_path: Path, target_dir: Path, max_samples: in
             "locale": "en-US",
             "sample_rate": TARGET_SR,
             "duration_seconds": round(duration, 3),
-            "snr_db": round(float(snr_db), 2),
+            "snr_db": round(snr_val, 2),
             "transcript_raw": raw_text,
             "transcript_normalized": raw_text,
             "channels": 1,

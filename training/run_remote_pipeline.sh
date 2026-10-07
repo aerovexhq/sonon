@@ -2,8 +2,10 @@
 # Aerovex Sonon - Remote Phase 3 Full-Duplex Pipeline Runner
 set -euo pipefail
 
+export PYTHONPATH="/root/sonon"
 MOUNT_DIR="/mnt/volume"
 VENV_PYTHON="$MOUNT_DIR/venv/bin/python3"
+HF_BIN="$MOUNT_DIR/venv/bin/hf"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "================================================================================"
@@ -19,14 +21,14 @@ mkdir -p "$DOWNLOAD_DIR" "$STAGING_DIR" "$SHARDS_DIR" "$MANIFESTS_DIR"
 
 # 1. High-throughput download of MagicHub spontaneous conversational dataset
 echo "Step 1: Downloading MagicHub Spontaneous English Conversational Dataset..."
-"$MOUNT_DIR/venv/bin/huggingface-cli" download \
+"$HF_BIN" download \
     MagicHub/multi-stream-spontaneous-conversation-training-datasets_english \
     --repo-type dataset \
     --local-dir "$DOWNLOAD_DIR/magichub_en"
 
 # 2. High-throughput download of Expresso conversational dialogues
 echo "Step 2: Downloading Expresso Conversational Dialogue Parquet Partitions..."
-"$MOUNT_DIR/venv/bin/huggingface-cli" download \
+"$HF_BIN" download \
     nytopop/expresso-conversational \
     --repo-type dataset \
     --local-dir "$DOWNLOAD_DIR/expresso"
@@ -53,7 +55,7 @@ echo "Step 4: Packaging WebDataset Shards & Updating Manifests..."
 echo "================================================================================"
 echo "Phase 3 Ingestion & Sharding Complete."
 echo "Current Shard Count:"
-ls -lh "$SHARDS_DIR"/*.tar | wc -l
+ls -lh "$SHARDS_DIR"/*.tar | wc -l || true
 echo "Total Storage Used:"
 du -sh "$MOUNT_DIR"
 echo "================================================================================"
