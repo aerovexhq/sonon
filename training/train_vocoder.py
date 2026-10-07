@@ -252,8 +252,9 @@ class VocoderDataset(Dataset):
         self.segment_length = segment_length
         with open(manifest_path, "r", encoding="utf-8") as f:
             self.samples = json.load(f)
-        if max_samples:
-            self.samples = self.samples[:max_samples]
+        if max_samples and max_samples < len(self.samples):
+            step = len(self.samples) / max_samples
+            self.samples = [self.samples[int(i * step)] for i in range(max_samples)]
 
         self.shard_tar_files = {}
         for p in Path(shards_dir).glob("shard_*.tar"):
@@ -345,6 +346,22 @@ def train_vocoder(
         resblock_kernel_sizes=[3, 7, 11]
     ).to(device)
 
+    # Warm-start from existing checkpoint if available
+    candidate_ckpts = [
+        os.path.join(output_dir, "bigvgan_vocoder_epoch_003.pt"),
+        "/home/usr/Projects/aerovex/modules/sonon/models/bigvgan_vocoder/bigvgan_vocoder_epoch_003.pt"
+    ]
+    for ckpt_path in candidate_ckpts:
+        if os.path.exists(ckpt_path):
+            try:
+                print(f"Warm-starting vocoder weights from: {ckpt_path}")
+                ckpt_data = torch.load(ckpt_path, map_location=device)
+                model.load_state_dict(ckpt_data["model_state_dict"], strict=False)
+                print("Warm-start successful.")
+                break
+            except Exception as e:
+                print(f"Could not load checkpoint {ckpt_path}: {e}")
+
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Model initialized: BigVganVocoder with {total_params:,} parameters.")
 
@@ -399,7 +416,17 @@ def train_vocoder(
 
     # Export pure safe Rust compatible weights
     export_vocoder_rust_weights(model, os.path.join(output_dir, "bigvgan_vocoder_sonon_weights.json"))
-    print("\nPhase 7 BigVGAN-v2 Universal Neural Vocoder training successfully completed.")
+    models_dir = "/home/usr/Projects/aerovex/modules/sonon/models/bigvgan_vocoder"
+    if os.path.abspath(output_dir) != os.path.abspath(models_dir):
+        export_vocoder_rust_weights(model, os.path.join(models_dir, "bigvgan_vocoder_sonon_weights.json"))
+        latest_ckpt = os.path.join(models_dir, "bigvgan_vocoder_epoch_003.pt")
+        try:
+            import shutil
+            shutil.copyfile(checkpoint_path, latest_ckpt)
+            print(f"Copied latest checkpoint to: {latest_ckpt}")
+        except Exception as e:
+            print(f"Could not copy checkpoint: {e}")
+    print("\nBigVGAN-v2 Universal Neural Vocoder training successfully completed.")
 
 
 def export_vocoder_rust_weights(model: BigVganVocoder, output_json: str):
@@ -417,6 +444,7 @@ def export_vocoder_rust_weights(model: BigVganVocoder, output_json: str):
         "upsample_factor": 256,
         "timestamp": time.time()
     }
+    os.makedirs(os.path.dirname(output_json), exist_ok=True)
     with open(output_json, "w", encoding="utf-8") as f:
         json.dump(weights_dict, f, indent=2)
     print("Safe Rust vocoder weight manifest exported successfully.")
