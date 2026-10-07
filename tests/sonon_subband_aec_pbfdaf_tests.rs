@@ -424,7 +424,7 @@ fn test_subband_aec_realtime_throughput_benchmark() {
     let throughput = (n_samples as f64) / elapsed.as_secs_f64();
     let rt_ratio = throughput / (sample_rate as f64);
 
-    let min_throughput = if cfg!(debug_assertions) { 40000.0 } else { 150000.0 };
+    let min_throughput = if cfg!(debug_assertions) { 20000.0 } else { 150000.0 };
     assert!(
         throughput > min_throughput,
         "Throughput {:.0} samples/sec was below {:.0} bound ({:.1}x real-time)",

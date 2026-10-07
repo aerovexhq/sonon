@@ -35,6 +35,7 @@ def solve_flow_ode(
     seq_len: int = 128,
     steps: int = 16,
     solver: str = "rk2",
+    key_padding_mask: Optional[torch.Tensor] = None,
     device: torch.device = torch.device("cpu")
 ) -> torch.Tensor:
     """Solve Optimal Transport ODE dx/dt = v_theta(x_t, t, c) from t=0 (noise) to t=1 (mel latent)."""
@@ -48,14 +49,14 @@ def solve_flow_ode(
 
         if solver == "rk2":
             # Midpoint Runge-Kutta 2
-            k1 = model(x, t_tensor, context)
+            k1 = model(x, t_tensor, context, key_padding_mask=key_padding_mask)
             x_mid = x + 0.5 * dt * k1
             t_mid_tensor = torch.tensor([t + 0.5 * dt], device=device, dtype=torch.float32)
-            k2 = model(x_mid, t_mid_tensor, context)
+            k2 = model(x_mid, t_mid_tensor, context, key_padding_mask=key_padding_mask)
             x = x + dt * k2
         else:
             # Euler
-            v = model(x, t_tensor, context)
+            v = model(x, t_tensor, context, key_padding_mask=key_padding_mask)
             x = x + dt * v
 
         t += dt
@@ -102,17 +103,92 @@ def invert_mel_analytical(mel_latents: torch.Tensor, n_iters: int = 32) -> np.nd
     return x_final
 
 
+def invert_mel_source_filter(
+    mel_latents: torch.Tensor,
+    f0_base: float = 145.0,
+    arousal: float = 0.7,
+    valence: float = 0.6
+) -> np.ndarray:
+    """Invert mel latent spectrogram using physical glottal pulse train excitation modulated by mel vocal tract formants."""
+    from train_vocoder import MEL_BASIS, WIN_LENGTH, N_FFT
+    import scipy.signal
+
+    mel = mel_latents.squeeze(0).transpose(0, 1).cpu().numpy()  # (80, T_frames)
+    T_frames = mel.shape[1]
+
+    # Un-normalize log-mel to linear spectral magnitude
+    log_mel_unnorm = mel * 4.0 - 4.0
+    mel_linear = np.exp(np.clip(log_mel_unnorm, -8.0, 6.0))
+    mel_pinv = np.linalg.pinv(MEL_BASIS)
+    linear_mag = np.maximum(0.0, np.dot(mel_pinv, mel_linear))  # (513, T_frames)
+
+    # 1. Pitch contour with natural prosody and affective dynamics
+    N_samples = (T_frames - 1) * HOP_LENGTH
+    t = np.linspace(0, N_samples / SAMPLE_RATE, N_samples)
+
+    pitch_mod = 12.0 * arousal * np.sin(2 * np.pi * 0.45 * t)
+    cadence = -25.0 * (t / max(1e-5, (N_samples / SAMPLE_RATE)))
+    f0 = np.clip(f0_base + pitch_mod + cadence, 70.0, 350.0)
+
+    # 2. Glottal source: Rosenberg glottal volume velocity model
+    phase = 2 * np.pi * np.cumsum(f0) / SAMPLE_RATE
+    phase_wrapped = np.mod(phase, 2 * np.pi)
+
+    glottal = np.zeros_like(t)
+    open_quotient = 0.60
+    open_phase = phase_wrapped < (open_quotient * 2 * np.pi)
+    theta = phase_wrapped[open_phase] / (open_quotient * 2 * np.pi)
+    glottal[open_phase] = 0.5 * (1 - np.cos(np.pi * theta)) * np.sin(np.pi * theta / 2)
+    glottal_pulse = np.diff(glottal, prepend=0)
+
+    # Voicing detection from mel spectral tilt
+    low_ratio = np.mean(linear_mag[:35, :], axis=0) / (np.mean(linear_mag, axis=0) + 1e-6)
+    voiced_mask = low_ratio > 1.1
+    voiced_interp = np.interp(np.linspace(0, T_frames - 1, N_samples), np.arange(T_frames), voiced_mask.astype(float))
+
+    # Mixed excitation: voiced glottal pulses + turbulent unvoiced aspiration
+    unvoiced_noise = np.random.randn(N_samples) * 0.12
+    excitation = voiced_interp * glottal_pulse + (1.0 - voiced_interp * 0.75) * unvoiced_noise
+    excitation = excitation / (np.max(np.abs(excitation)) + 1e-6)
+
+    # 3. STFT of glottal source
+    window = np.hanning(WIN_LENGTH)
+    _, _, zxx_exc = scipy.signal.stft(
+        excitation, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT, boundary=None, padded=True
+    )
+
+    min_T = min(linear_mag.shape[1], zxx_exc.shape[1])
+    linear_mag_aligned = linear_mag[:, :min_T]
+    zxx_exc_aligned = zxx_exc[:, :min_T]
+
+    # 4. Source-filter spectral shaping: preserve glottal harmonic spikes while modulating by vocal tract formant envelope
+    import scipy.ndimage
+    exc_mag = np.abs(zxx_exc_aligned) + 1e-6
+    smooth_exc_mag = scipy.ndimage.gaussian_filter1d(exc_mag, sigma=8, axis=0)
+    norm_exc = zxx_exc_aligned / smooth_exc_mag
+    shaped_stft = linear_mag_aligned * norm_exc
+
+    # 5. Inverse STFT to continuous audio waveform
+    _, audio = scipy.signal.istft(
+        shaped_stft, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT
+    )
+    if np.max(np.abs(audio)) > 1e-6:
+        audio = audio / np.max(np.abs(audio)) * 0.85
+    return audio
+
+
 def synthesize(
     text: str = "Waypoint Alpha reached. Maintaining altitude three thousand feet.",
     dit_checkpoint: str = DEFAULT_DIT_CHECKPOINT,
     vocoder_checkpoint: str = DEFAULT_VOCODER_CHECKPOINT,
     output_wav: str = DEFAULT_OUTPUT_WAV,
-    vocoder_mode: str = "analytical",
+    vocoder_mode: str = "source_filter",
     valence: float = 0.6,
     arousal: float = 0.7,
     dominance: float = 0.8,
     steps: int = 16,
     duration_seconds: float = 3.0,
+    f0_base: float = 145.0,
     device_name: str = "auto"
 ):
     if device_name == "auto":
@@ -137,7 +213,13 @@ def synthesize(
     dit_model.load_state_dict(dit_ckpt["model_state_dict"], strict=False)
     dit_model.eval()
 
-    # 2. Build 3D VAD affective conditioning context and byte text tokens
+    # Ensure cross-attention gate alpha_2 in all blocks is active
+    h_dim = dit_model.hidden_dim
+    with torch.no_grad():
+        for block in dit_model.blocks:
+            block.ada_ln_2.linear.bias.data[2 * h_dim : 3 * h_dim] = 1.0
+
+    # 2. Build 3D VAD affective conditioning context and byte text tokens (NO ZERO PADDING)
     vad = np.array([valence, arousal, dominance], dtype=np.float32)
     lookahead = np.zeros(13, dtype=np.float32)
     lookahead[0] = 3.0   # 3 lookahead tokens
@@ -145,9 +227,9 @@ def synthesize(
     lookahead[2] = 0.25  # Low entropy
     cond_vector = torch.from_numpy(np.concatenate([vad, lookahead])).unsqueeze(0).to(device)
 
-    byte_tokens = [min(255, b) for b in text.encode("utf-8")[:128]]
-    if len(byte_tokens) < 128:
-        byte_tokens = byte_tokens + [0] * (128 - len(byte_tokens))
+    byte_tokens = [min(255, b) for b in text.encode("utf-8")]
+    if not byte_tokens:
+        byte_tokens = [32]
     text_tokens = torch.tensor([byte_tokens], dtype=torch.int64, device=device)
 
     # Project to context space (1, 1 + L, context_dim)
@@ -180,6 +262,9 @@ def synthesize(
             print("Synthesizing continuous 24,000 Hz audio waveform via BigVGAN-v2...")
             wav_tensor = voc_model(mel_in)
             audio = wav_tensor.squeeze().cpu().numpy()
+        elif vocoder_mode == "source_filter":
+            print("Synthesizing continuous 24,000 Hz audio waveform via physical glottal source-filter synthesis...")
+            audio = invert_mel_source_filter(mel_latents, f0_base=f0_base, arousal=arousal, valence=valence)
         else:
             print("Synthesizing continuous 24,000 Hz audio waveform via analytical vocoder inversion...")
             audio = invert_mel_analytical(mel_latents)
@@ -202,12 +287,13 @@ def main():
     parser.add_argument("--dit_checkpoint", type=str, default=DEFAULT_DIT_CHECKPOINT)
     parser.add_argument("--vocoder_checkpoint", type=str, default=DEFAULT_VOCODER_CHECKPOINT)
     parser.add_argument("--output_wav", type=str, default=DEFAULT_OUTPUT_WAV)
-    parser.add_argument("--vocoder_mode", type=str, default="analytical", choices=["analytical", "neural"])
+    parser.add_argument("--vocoder_mode", type=str, default="source_filter", choices=["source_filter", "analytical", "neural"])
     parser.add_argument("--valence", type=float, default=0.6)
     parser.add_argument("--arousal", type=float, default=0.7)
     parser.add_argument("--dominance", type=float, default=0.8)
     parser.add_argument("--steps", type=int, default=16)
     parser.add_argument("--duration", type=float, default=3.0)
+    parser.add_argument("--f0_base", type=float, default=145.0)
     parser.add_argument("--device", type=str, default="auto")
     args = parser.parse_args()
 
@@ -222,6 +308,7 @@ def main():
         dominance=args.dominance,
         steps=args.steps,
         duration_seconds=args.duration,
+        f0_base=args.f0_base,
         device_name=args.device
     )
 

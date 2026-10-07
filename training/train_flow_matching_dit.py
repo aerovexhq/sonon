@@ -182,7 +182,13 @@ class DiTBlock(nn.Module):
             nn.Linear(4 * hidden_dim, hidden_dim)
         )
 
-    def forward(self, x: torch.Tensor, cond: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        cond: torch.Tensor,
+        context: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         # 1. Self-Attention with AdaLN-1
         normed, alpha_1 = self.ada_ln_1(x, cond)
         attn_out, _ = self.self_attn(normed, normed, normed)
@@ -191,8 +197,12 @@ class DiTBlock(nn.Module):
         # 2. Cross-Attention with AdaLN-2 (if context provided)
         if context is not None:
             normed, alpha_2 = self.ada_ln_2(x, cond)
-            cross_out, _ = self.cross_attn(normed, context, context)
-            x = x + alpha_2 * cross_out
+            cross_out, _ = self.cross_attn(
+                normed, context, context,
+                key_padding_mask=key_padding_mask
+            )
+            # Active baseline gating (1.0 + alpha_2) so text conditioning directly influences formants
+            x = x + (1.0 + alpha_2) * cross_out
 
         # 3. MLP with AdaLN-3
         normed, alpha_3 = self.ada_ln_3(x, cond)
@@ -267,14 +277,33 @@ class FlowMatchingDiT(nn.Module):
             return torch.cat([vad_ctx, text_ctx], dim=1)      # (B, 1 + L, context_dim)
         return vad_ctx
 
-    def forward(self, x_t: torch.Tensor, t: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def add_positional_encoding(self, h: torch.Tensor) -> torch.Tensor:
+        """Add continuous sinusoidal positional encodings along temporal frame dimension T."""
+        B, T, D = h.shape
+        half_dim = D // 2
+        positions = torch.arange(T, dtype=torch.float32, device=h.device)[:, None]
+        freqs = torch.exp(
+            -math.log(10000.0) * torch.arange(0, half_dim, dtype=torch.float32, device=h.device) / half_dim
+        )[None, :]
+        args = positions * freqs
+        pos_emb = torch.cat([torch.sin(args), torch.cos(args)], dim=-1).unsqueeze(0)
+        return h + pos_emb
+
+    def forward(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        context: Optional[torch.Tensor] = None,
+        key_padding_mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         # x_t: (B, T, latent_dim)
         # t: (B,)
         cond = self.timestep_embed(t)  # (B, hidden_dim)
         h = self.in_proj(x_t)          # (B, T, hidden_dim)
+        h = self.add_positional_encoding(h)
 
         for block in self.blocks:
-            h = block(h, cond, context)
+            h = block(h, cond, context, key_padding_mask=key_padding_mask)
 
         normed, _ = self.final_ada_ln(h, cond)
         v_pred = self.out_proj(normed)  # (B, T, latent_dim)
@@ -375,15 +404,21 @@ class ShardedAcousticDataset(Dataset):
 
         # Byte-level text tokenization for phonetic cross-attention
         text = record.get("text", "")
-        byte_tokens = [min(255, b) for b in text.encode("utf-8")[:128]]
-        if len(byte_tokens) < 128:
-            byte_tokens = byte_tokens + [0] * (128 - len(byte_tokens))
+        raw_bytes = [min(255, b) for b in text.encode("utf-8")[:128]]
+        if not raw_bytes:
+            raw_bytes = [32]
+        pad_len = 128 - len(raw_bytes)
+        byte_tokens = raw_bytes + [0] * pad_len
         text_tokens = np.array(byte_tokens, dtype=np.int64)
+
+        # Boolean key padding mask: False for active tokens (VAD + real text), True for padding
+        pad_mask = np.array([False] * (1 + len(raw_bytes)) + [True] * pad_len, dtype=bool)
 
         return {
             "mel": torch.from_numpy(mel),                # (256, 80)
             "cond": torch.from_numpy(cond_vector),       # (16,)
             "text_tokens": torch.from_numpy(text_tokens),# (128,)
+            "pad_mask": torch.from_numpy(pad_mask),      # (129,)
             "mask_span": torch.from_numpy(mask_span)     # (2,)
         }
 
@@ -478,8 +513,9 @@ def train_flow_matching(
             text_tokens = batch["text_tokens"].to(device)
             context = model.build_context(cond_raw, text_tokens)
 
-            # Predict velocity field
-            v_pred = model(x_t, t, context)
+            # Predict velocity field with key padding mask
+            pad_mask = batch["pad_mask"].to(device)
+            v_pred = model(x_t, t, context, key_padding_mask=pad_mask)
 
             # Optimal Transport Conditional Flow Matching (OT-CFM) regression loss
             loss_cfm = F.mse_loss(v_pred, u_t)
