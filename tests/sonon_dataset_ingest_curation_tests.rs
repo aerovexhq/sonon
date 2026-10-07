@@ -289,3 +289,24 @@ fn test_sonon_engine_curated_dataset_ingestion_pipeline() {
     let bad_result = engine.ingest_curated_sample(&bad_sample);
     assert!(bad_result.is_err(), "Corrupted sample must be rejected by quality gating");
 }
+
+#[test]
+fn test_sharded_dataset_reader_from_curated_file() {
+    let shard_path = std::path::Path::new("data/staged_shards/shards/shard_000000.sonon");
+    if shard_path.exists() {
+        let file = std::fs::File::open(shard_path).expect("Must open shard file");
+        let mut reader = DatasetShardReader::new(file).expect("Must initialize reader with magic header");
+        let first_sample = reader.read_next_sample().expect("Read must succeed");
+        assert!(first_sample.is_some(), "Curated shard must contain at least one sample");
+        let sample = first_sample.unwrap();
+        assert!(!sample.sample_id.is_empty());
+        assert_eq!(sample.sample_rate, 24000.0);
+        assert!(!sample.audio.is_empty());
+        println!(
+            "Successfully streamed sample {} from real shard archive (audio samples: {}, sr: {})",
+            sample.sample_id,
+            sample.audio.len(),
+            sample.sample_rate
+        );
+    }
+}
