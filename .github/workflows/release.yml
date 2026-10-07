@@ -1,0 +1,132 @@
+name: Release Sonon
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*"
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version tag (e.g. 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-sonon-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build & Package Sonon Release Assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Packaging Version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            V="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF_NAME}" =~ ^[0-9] ]]; then
+            V="${GITHUB_REF_NAME}"
+          elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9] ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="0.1.0"
+          fi
+          echo "version=${V}" >> $GITHUB_OUTPUT
+          echo "VERSION=${V}" >> $GITHUB_ENV
+
+      - name: Install Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Compile Sonon Release Binaries & Libraries
+        run: |
+          cargo build --release --bin sonon --lib
+          strip target/release/sonon target/release/libsonon.so || true
+
+      - name: Assemble Release Packages & Artifacts
+        run: |
+          mkdir -p dist
+
+          # Copy Linux standalone binary & shared library
+          cp target/release/sonon dist/sonon
+          cp target/release/libsonon.so dist/libsonon.so
+          chmod +x dist/sonon
+
+          # Copy C/C++ Header
+          if [ -f bindings/cpp/include/sonon.hpp ]; then
+            cp bindings/cpp/include/sonon.hpp dist/sonon.hpp
+            cp bindings/cpp/include/sonon.hpp dist/sonon.h
+          fi
+
+          # Copy WebAssembly Kernel
+          if [ -f public/sonon.wasm ]; then
+            cp public/sonon.wasm dist/sonon.wasm
+          elif [ -f docs/public/sonon.wasm ]; then
+            cp docs/public/sonon.wasm dist/sonon.wasm
+          fi
+
+          # Copy Test Vectors
+          if [ -f sonon_test_vectors.json.gz ]; then
+            cp sonon_test_vectors.json.gz dist/
+          fi
+
+          # Build Python Wheel
+          pip install --upgrade setuptools wheel
+          cd bindings/python
+          python3 setup.py bdist_wheel
+          cp dist/*.whl ../../dist/
+          cd ../..
+
+          # Package NPM Distribution
+          cd bindings/npm
+          npm pack
+          cp *.tgz ../../dist/
+          cd ../..
+
+          # Create Linux Tarball
+          tar -czf "dist/sonon-${VERSION}-linux-x86_64.tar.gz" -C target/release sonon libsonon.so
+
+          # Generate Cryptographic SHA256SUMS
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          cd ..
+
+      - name: Publish Official Tagged Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Sonon ${{ env.VERSION }} - Embedded Acoustic DSP, Wake-Word Spotting & Neuromorphic Engine"
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
