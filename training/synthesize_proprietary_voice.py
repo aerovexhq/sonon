@@ -123,11 +123,11 @@ def invert_mel_analytical(mel_latents: torch.Tensor, n_iters: int = 32) -> np.nd
 
 def invert_mel_source_filter(
     mel_latents: torch.Tensor,
-    f0_base: float = 145.0,
+    f0_base: float = 135.0,
     arousal: float = 0.7,
     valence: float = 0.6
 ) -> np.ndarray:
-    """Invert mel latent spectrogram using physical glottal harmonic excitation modulated by vocal tract formants."""
+    """Invert mel latent spectrogram using warm human glottal phonation with psychoacoustic phase dispersion."""
     from train_vocoder import MEL_BASIS, WIN_LENGTH, N_FFT
     import scipy.signal
     import scipy.ndimage
@@ -140,6 +140,14 @@ def invert_mel_source_filter(
     if T_frames >= 9:
         m_frames = scipy.signal.savgol_filter(m_frames, window_length=9, polyorder=2, axis=0)
 
+    # Monotonic end-of-phrase silence decay on the last 25 frames (eliminates end chirp / rising pitch)
+    fade_frames = min(25, T_frames // 4)
+    if fade_frames > 0:
+        fade_curve = 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, fade_frames)))
+        for i, f_idx in enumerate(range(T_frames - fade_frames, T_frames)):
+            w = fade_curve[i]
+            m_frames[f_idx] = w * m_frames[f_idx] + (1.0 - w) * (-2.0)
+
     mel = m_frames.T  # (80, T_frames)
 
     # Un-normalize log-mel to linear spectral magnitude
@@ -148,46 +156,62 @@ def invert_mel_source_filter(
     mel_pinv = np.linalg.pinv(MEL_BASIS)
     linear_mag = np.maximum(0.0, np.dot(mel_pinv, mel_linear))  # (513, T_frames)
 
-    # Robust frame energy envelope from linear spectral magnitude
+    # Energy envelope from linear spectral magnitude
     frame_energy = np.sqrt(np.sum(linear_mag**2, axis=0))
     p95_energy = np.percentile(frame_energy, 95) + 1e-6
     norm_energy = np.clip(frame_energy / p95_energy, 0.0, 1.0)
-    speech_gate = np.clip((norm_energy - 0.02) / 0.08, 0.0, 1.0)
 
-    # 1. Continuous pitch contour with natural syllabic dynamics and intonation drift
-    f0_syllabic = f0_base + (30.0 * arousal) * (norm_energy**0.6) - 12.0 * np.linspace(0, 1, T_frames)
-    f0 = np.clip(f0_syllabic, 80.0, 320.0)
+    # 1. Natural pitch contour: base f0, gentle syllabic inflection, and natural declination
+    f0_syllabic = f0_base + (20.0 * arousal) * (norm_energy**0.6) - 10.0 * np.linspace(0, 1, T_frames)
+    f0 = np.clip(f0_syllabic, 85.0, 240.0)
 
     N_samples = (T_frames - 1) * HOP_LENGTH
     t_frames = np.arange(T_frames)
     t_samples = np.linspace(0, T_frames - 1, N_samples)
     f0_interp = np.interp(t_samples, t_frames, f0)
-    gate_interp = np.interp(t_samples, t_frames, speech_gate)
 
-    # 2. Rich Liljencrants-Fant glottal harmonic excitation across all formant frequencies (up to 7.5 kHz)
-    phase = 2 * np.pi * np.cumsum(f0_interp) / SAMPLE_RATE
+    # Add natural vocal fold micro-jitter (0.8% variation), breaking artificial robotic buzz
+    np.random.seed(42)
+    jitter = 1.0 + 0.008 * scipy.ndimage.gaussian_filter1d(np.random.randn(N_samples), sigma=40)
+    f0_jittered = f0_interp * jitter
+
+    # 2. Warm human glottal phonation with psychoacoustic phase dispersion
+    # Eliminates mosquito buzz by dispersing phase above 1,500 Hz and enforcing natural -12 dB/oct tilt
+    phase = 2 * np.pi * np.cumsum(f0_jittered) / SAMPLE_RATE
     glottal_harmonic = np.zeros(N_samples)
-    max_harmonic = int(min(60, 7500.0 / f0_base))
+    max_harmonic = int(min(32, 4500.0 / f0_base))  # Bandlimited to warm vocal band <= 4.5 kHz
     for k in range(1, max_harmonic + 1):
-        # Natural vocal cord harmonic slope (-6 to -9 dB/octave)
-        amp = 1.0 / (1.0 + ((k * f0_base) / 1200.0)**1.15)
-        disp = 0.08 * np.sin(k * 0.4)
-        glottal_harmonic += amp * np.cos(k * phase + disp)
+        freq = k * f0_base
+        # Natural warm human vocal fold spectral roll-off (-12 dB/octave)
+        amp = 1.0 / (1.0 + (freq / 650.0)**1.85)
+        if freq < 1500.0:
+            # Low frequencies: phase-coherent for solid fundamental and F1 resonance
+            disp_phase = 0.2 * np.sin(k * 0.5)
+        else:
+            # High frequencies: psychoacoustic phase dispersion eliminating insect buzz
+            disp_phase = 0.5 * np.sin(k * 0.8) + 0.3 * np.cos(k * 1.4)
+        glottal_harmonic += amp * np.cos(k * phase + disp_phase)
 
-    # 3. Continuous voicing degree: vocal cords vibrate continuously during speech
-    low_freq_energy = np.sum(linear_mag[:35, :], axis=0)  # Frequencies below ~820 Hz
+    # 3. Continuous voicing degree + warm turbulent aspiration
+    low_freq_energy = np.sum(linear_mag[:35, :], axis=0)  # Energy < 820 Hz
     total_energy = np.sum(linear_mag, axis=0) + 1e-6
     low_ratio = low_freq_energy / total_energy
-    voicing_deg = np.clip(0.45 + 1.2 * low_ratio, 0.45, 0.95)
+    voicing_deg = np.clip(0.40 + 1.1 * low_ratio, 0.40, 0.90)
     voicing_interp = np.interp(t_samples, t_frames, voicing_deg)
 
-    # 4. Mixed excitation: voiced glottal harmonics + turbulent aspiration
-    aspiration = np.random.randn(N_samples) * 0.08
+    # Natural vocal aspiration noise floor
+    aspiration = scipy.ndimage.gaussian_filter1d(np.random.randn(N_samples), sigma=1) * 0.15
     mixed_excitation = voicing_interp * glottal_harmonic + (1.0 - voicing_interp * 0.6) * aspiration
-    mixed_excitation = mixed_excitation * gate_interp
+
+    # Tail envelope decay to guarantee zero rising pitch / boundary chirp at end
+    fade_tail_samples = min(int(0.25 * SAMPLE_RATE), N_samples // 4)
+    if fade_tail_samples > 0:
+        tail_curve = 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, fade_tail_samples)))
+        mixed_excitation[-fade_tail_samples:] *= tail_curve
+
     mixed_excitation = mixed_excitation / (np.max(np.abs(mixed_excitation)) + 1e-6)
 
-    # 5. STFT of glottal source
+    # 4. STFT of glottal source
     window = np.hanning(WIN_LENGTH)
     _, _, zxx_exc = scipy.signal.stft(
         mixed_excitation, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT, boundary=None, padded=True
@@ -197,20 +221,26 @@ def invert_mel_source_filter(
     linear_mag_aligned = linear_mag[:, :min_T]
     zxx_exc_aligned = zxx_exc[:, :min_T]
 
-    # Formant contrast enhancement (gamma = 1.20) elevating F1/F2/F3 resonances
-    linear_mag_sharp = np.power(linear_mag_aligned + 1e-6, 1.20)
-    linear_mag_sharp = linear_mag_sharp * (np.sum(linear_mag_aligned, axis=0, keepdims=True) / (np.sum(linear_mag_sharp, axis=0, keepdims=True) + 1e-6))
+    # Natural formant contrast (gamma = 1.03 for clean vowel articulation without needle spikes)
+    linear_mag_natural = np.power(linear_mag_aligned + 1e-6, 1.03)
+    linear_mag_natural = linear_mag_natural * (np.sum(linear_mag_aligned, axis=0, keepdims=True) / (np.sum(linear_mag_natural, axis=0, keepdims=True) + 1e-6))
 
-    # Source-filter spectral shaping: modulate glottal harmonics by sharpened vocal tract formants
+    # Source-filter spectral shaping
     exc_mag = np.abs(zxx_exc_aligned) + 1e-6
-    smooth_exc_mag = scipy.ndimage.gaussian_filter1d(exc_mag, sigma=8, axis=0)
+    smooth_exc_mag = scipy.ndimage.gaussian_filter1d(exc_mag, sigma=10, axis=0)
     norm_exc = zxx_exc_aligned / smooth_exc_mag
-    shaped_stft = linear_mag_sharp * norm_exc
+    shaped_stft = linear_mag_natural * norm_exc
 
-    # 6. Inverse STFT to continuous audio waveform
+    # 5. Inverse STFT to continuous audio waveform
     _, audio = scipy.signal.istft(
         shaped_stft, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT
     )
+
+    # Final audio tail fadeout
+    audio_fade_samples = min(int(0.18 * SAMPLE_RATE), len(audio) // 4)
+    if audio_fade_samples > 0:
+        audio[-audio_fade_samples:] *= 0.5 * (1.0 + np.cos(np.linspace(0, np.pi, audio_fade_samples)))
+
     if np.max(np.abs(audio)) > 1e-6:
         audio = audio / np.max(np.abs(audio)) * 0.89125
     return audio
@@ -278,7 +308,12 @@ def synthesize(
         context_uncond = torch.zeros_like(context)
 
         # 3. Solve Flow Matching ODE with CFG to synthesize 80-channel mel frames
-        seq_len = int((duration_seconds * SAMPLE_RATE) / HOP_LENGTH)
+        # Strictly bound within the 256-frame training distribution (max 250 frames)
+        if duration_seconds is None or duration_seconds == 3.0:
+            est_dur = min(2.65, max(1.8, len(text) / 25.0 + 0.35))
+            seq_len = int((est_dur * SAMPLE_RATE) / HOP_LENGTH)
+        else:
+            seq_len = min(252, int((duration_seconds * SAMPLE_RATE) / HOP_LENGTH))
         print(f"Solving Optimal Transport ODE ({steps} RK2 steps, {seq_len} mel frames, CFG={cfg_scale})...")
         start_time = time.time()
         mel_latents = solve_flow_ode(
