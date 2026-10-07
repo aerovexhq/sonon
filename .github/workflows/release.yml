@@ -2,6 +2,8 @@ name: Release Sonon
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "[0-9]+.[0-9]+.[0-9]+*"
       - "v*"
@@ -35,12 +37,14 @@ jobs:
         run: |
           if [ -n "${{ inputs.version }}" ]; then
             V="${{ inputs.version }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            V="0.1.0-dev"
           elif [[ "${GITHUB_REF_NAME}" =~ ^[0-9] ]]; then
             V="${GITHUB_REF_NAME}"
           elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9] ]]; then
             V="${GITHUB_REF_NAME#v}"
           else
-            V="0.1.0"
+            V="0.1.0-dev"
           fi
           echo "version=${V}" >> $GITHUB_OUTPUT
           echo "VERSION=${V}" >> $GITHUB_ENV
@@ -117,11 +121,27 @@ jobs:
           cat SHA256SUMS
           cd ..
 
+      - name: Update Rolling Continuous Pre-Release (Tracks Latest Commit)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          tag_name: rolling
+          target_commitish: ${{ github.sha }}
+          name: "Sonon Continuous Development Build (0.1.0-dev)"
+          body: |
+            Automated continuous development release tracking the latest commit (`${{ github.sha }}`).
+          prerelease: true
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish Official Tagged Release
+        if: startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/tags/rolling'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "Sonon ${{ env.VERSION }} - Embedded Acoustic DSP, Wake-Word Spotting & Neuromorphic Engine"
+          name: "Sonon ${{ env.VERSION }} - Embedded Acoustic DSP, Wake-Word Spotting & Speech Synthesis Engine"
           draft: false
           prerelease: false
           make_latest: true
