@@ -25,6 +25,10 @@ pub use crate::metacognitive::{
     InnerMonologueToken, MetacognitiveTelemetry, MetacognitiveVoiceEngine, ProsodicIntent,
     SelfRepairDirective,
 };
+pub use crate::cockpit_interlock::{
+    BinauralSpatialParams, CockpitAlertPriority, CockpitAnnunciation,
+    CockpitVoiceInterlock, CommandInterlockDecision, TacticalFlightCommand,
+};
 use crate::echolocation::{AcousticPointCloud, CaCfarConfig, ChirpConfig, MultiMicAcousticEcholocator};
 use crate::health::{AcousticHealthMonitor, AirframeHealthSnapshot, MotorHealthConfig};
 use crate::mel::MelFilterbank;
@@ -171,6 +175,7 @@ pub struct SononEngine {
     edge_runtime: Option<EdgeSpeechRuntime>,
     aerospace_normalizer: AerospacePhoneticNormalizer,
     metacognitive_engine: Option<MetacognitiveVoiceEngine>,
+    cockpit_interlock: Option<CockpitVoiceInterlock>,
 }
 
 impl SononEngine {
@@ -271,6 +276,7 @@ impl SononEngine {
             edge_runtime: None,
             aerospace_normalizer: AerospacePhoneticNormalizer::new(),
             metacognitive_engine: None,
+            cockpit_interlock: None,
         }
     }
 
@@ -2765,6 +2771,84 @@ impl SononEngine {
         match &self.metacognitive_engine {
             Some(engine) => Ok(engine.telemetry()),
             None => Err("Metacognitive voice engine is not enabled".to_string()),
+        }
+    }
+
+    /// Enable the cockpit voice HUD and tactical autopilot command interlock.
+    pub fn enable_cockpit_interlock(&mut self, max_risk_alpha: f32) {
+        self.cockpit_interlock = Some(CockpitVoiceInterlock::new(max_risk_alpha));
+    }
+
+    /// Disable the cockpit voice HUD and tactical autopilot command interlock.
+    pub fn disable_cockpit_interlock(&mut self) {
+        self.cockpit_interlock = None;
+    }
+
+    /// Access reference to active cockpit voice interlock if enabled.
+    pub fn cockpit_interlock(&self) -> Option<&CockpitVoiceInterlock> {
+        self.cockpit_interlock.as_ref()
+    }
+
+    /// Access mutable reference to active cockpit voice interlock if enabled.
+    pub fn cockpit_interlock_mut(&mut self) -> Option<&mut CockpitVoiceInterlock> {
+        self.cockpit_interlock.as_mut()
+    }
+
+    /// Enqueue a flight annunciation into the priority-based cockpit queue.
+    pub fn enqueue_cockpit_annunciation(
+        &mut self,
+        priority: CockpitAlertPriority,
+        callout_text: impl Into<String>,
+        nato_phraseology: impl Into<String>,
+        spatial_location: Point3D,
+        timestamp_sec: f64,
+    ) -> Result<u64, String> {
+        match &mut self.cockpit_interlock {
+            Some(interlock) => Ok(interlock.enqueue_annunciation(
+                priority,
+                callout_text,
+                nato_phraseology,
+                spatial_location,
+                timestamp_sec,
+            )),
+            None => Err("Cockpit voice interlock is not enabled".to_string()),
+        }
+    }
+
+    /// Evaluate a detected pilot voice command through the conformal safety interlock.
+    pub fn process_cockpit_voice_command(
+        &self,
+        event: &KeywordEvent,
+    ) -> Result<CommandInterlockDecision, String> {
+        match &self.cockpit_interlock {
+            Some(interlock) => Ok(interlock.evaluate_flight_interlock(
+                event,
+                self.conformal_predictor.as_ref(),
+            )),
+            None => Err("Cockpit voice interlock is not enabled".to_string()),
+        }
+    }
+
+    /// Compute 3D binaural spatial audio parameters for Workstation HUD rendering.
+    pub fn compute_hud_spatial_audio(
+        &self,
+        position: &Point3D,
+    ) -> Result<BinauralSpatialParams, String> {
+        match &self.cockpit_interlock {
+            Some(interlock) => Ok(interlock.compute_binaural_spatial_params(position)),
+            None => Err("Cockpit voice interlock is not enabled".to_string()),
+        }
+    }
+
+    /// Process a streaming microphone frame through the cockpit interlock for barge-in yielding.
+    pub fn process_cockpit_microphone_frame(
+        &mut self,
+        user_mic_rms: f32,
+        frame_duration_ms: f32,
+    ) -> Result<Option<BargeInType>, String> {
+        match &mut self.cockpit_interlock {
+            Some(interlock) => Ok(interlock.process_microphone_frame(user_mic_rms, frame_duration_ms)),
+            None => Err("Cockpit voice interlock is not enabled".to_string()),
         }
     }
 }

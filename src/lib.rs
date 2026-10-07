@@ -54,6 +54,12 @@ pub mod vocoder;
 pub mod wavelet_synthesis;
 pub mod edge_runtime;
 pub mod metacognitive;
+pub mod cockpit_interlock;
+
+pub use cockpit_interlock::{
+    BinauralSpatialParams, CockpitAlertPriority, CockpitAnnunciation,
+    CockpitVoiceInterlock, CommandInterlockDecision, TacticalFlightCommand,
+};
 
 pub use metacognitive::{
     AffectiveAcousticModulation, AffectiveTrajectoryTracker, BargeInType,
