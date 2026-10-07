@@ -322,9 +322,11 @@ fn test_kws_synthesis_throughput_benchmark() {
     let samples_per_sec = (benchmark_stream.len() as f64) / elapsed.as_secs_f64();
     let realtime_factor = samples_per_sec / (sample_rate as f64);
 
+    let min_rtf = if cfg!(debug_assertions) { 15.0 } else { 25.0 };
     assert!(
-        realtime_factor > 25.0,
-        "Streaming KWS execution ({:.1}x real-time) must exceed 25x real-time",
-        realtime_factor
+        realtime_factor > min_rtf,
+        "Streaming KWS execution ({:.1}x real-time) must exceed target ({:.1}x)",
+        realtime_factor,
+        min_rtf
     );
 }

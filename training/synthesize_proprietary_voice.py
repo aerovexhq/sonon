@@ -32,14 +32,15 @@ DEFAULT_OUTPUT_WAV = "/home/usr/Projects/aerovex/modules/sonon/output/speech_syn
 def solve_flow_ode(
     model: FlowMatchingDiT,
     context: torch.Tensor,
+    context_uncond: Optional[torch.Tensor] = None,
+    cfg_scale: float = 2.0,
     seq_len: int = 128,
-    steps: int = 16,
+    steps: int = 24,
     solver: str = "rk2",
     key_padding_mask: Optional[torch.Tensor] = None,
     device: torch.device = torch.device("cpu")
 ) -> torch.Tensor:
-    """Solve Optimal Transport ODE dx/dt = v_theta(x_t, t, c) from t=0 (noise) to t=1 (mel latent)."""
-    # Sample base Gaussian noise x_0 ~ N(0, I)
+    """Solve Optimal Transport ODE dx/dt = v_theta(x_t, t, c) with Classifier-Free Guidance."""
     x = torch.randn(1, seq_len, N_MELS, device=device)
     dt = 1.0 / steps
 
@@ -48,15 +49,32 @@ def solve_flow_ode(
         t_tensor = torch.tensor([t], device=device, dtype=torch.float32)
 
         if solver == "rk2":
-            # Midpoint Runge-Kutta 2
-            k1 = model(x, t_tensor, context, key_padding_mask=key_padding_mask)
+            # Midpoint Runge-Kutta 2 with CFG
+            k1_cond = model(x, t_tensor, context, key_padding_mask=key_padding_mask)
+            if context_uncond is not None and cfg_scale > 1.0:
+                k1_uncond = model(x, t_tensor, context_uncond)
+                k1 = k1_uncond + cfg_scale * (k1_cond - k1_uncond)
+            else:
+                k1 = k1_cond
+
             x_mid = x + 0.5 * dt * k1
             t_mid_tensor = torch.tensor([t + 0.5 * dt], device=device, dtype=torch.float32)
-            k2 = model(x_mid, t_mid_tensor, context, key_padding_mask=key_padding_mask)
+            k2_cond = model(x_mid, t_mid_tensor, context, key_padding_mask=key_padding_mask)
+            if context_uncond is not None and cfg_scale > 1.0:
+                k2_uncond = model(x_mid, t_mid_tensor, context_uncond)
+                k2 = k2_uncond + cfg_scale * (k2_cond - k2_uncond)
+            else:
+                k2 = k2_cond
+
             x = x + dt * k2
         else:
             # Euler
-            v = model(x, t_tensor, context, key_padding_mask=key_padding_mask)
+            v_cond = model(x, t_tensor, context, key_padding_mask=key_padding_mask)
+            if context_uncond is not None and cfg_scale > 1.0:
+                v_uncond = model(x, t_tensor, context_uncond)
+                v = v_uncond + cfg_scale * (v_cond - v_uncond)
+            else:
+                v = v_cond
             x = x + dt * v
 
         t += dt
@@ -109,12 +127,20 @@ def invert_mel_source_filter(
     arousal: float = 0.7,
     valence: float = 0.6
 ) -> np.ndarray:
-    """Invert mel latent spectrogram using physical glottal pulse train excitation modulated by mel vocal tract formants."""
+    """Invert mel latent spectrogram using physical glottal harmonic excitation modulated by vocal tract formants."""
     from train_vocoder import MEL_BASIS, WIN_LENGTH, N_FFT
     import scipy.signal
+    import scipy.ndimage
 
-    mel = mel_latents.squeeze(0).transpose(0, 1).cpu().numpy()  # (80, T_frames)
-    T_frames = mel.shape[1]
+    # Extract mel latents and apply articulatory temporal smoothing
+    m_frames = mel_latents.squeeze(0).cpu().numpy()  # (T_frames, 80)
+    T_frames = m_frames.shape[0]
+
+    # Savitzky-Golay temporal smoothing (window=9, poly=2) matching vocal tract articulatory inertia
+    if T_frames >= 9:
+        m_frames = scipy.signal.savgol_filter(m_frames, window_length=9, polyorder=2, axis=0)
+
+    mel = m_frames.T  # (80, T_frames)
 
     # Un-normalize log-mel to linear spectral magnitude
     log_mel_unnorm = mel * 4.0 - 4.0
@@ -122,58 +148,71 @@ def invert_mel_source_filter(
     mel_pinv = np.linalg.pinv(MEL_BASIS)
     linear_mag = np.maximum(0.0, np.dot(mel_pinv, mel_linear))  # (513, T_frames)
 
-    # 1. Pitch contour with natural prosody and affective dynamics
+    # Robust frame energy envelope from linear spectral magnitude
+    frame_energy = np.sqrt(np.sum(linear_mag**2, axis=0))
+    p95_energy = np.percentile(frame_energy, 95) + 1e-6
+    norm_energy = np.clip(frame_energy / p95_energy, 0.0, 1.0)
+    speech_gate = np.clip((norm_energy - 0.02) / 0.08, 0.0, 1.0)
+
+    # 1. Continuous pitch contour with natural syllabic dynamics and intonation drift
+    f0_syllabic = f0_base + (30.0 * arousal) * (norm_energy**0.6) - 12.0 * np.linspace(0, 1, T_frames)
+    f0 = np.clip(f0_syllabic, 80.0, 320.0)
+
     N_samples = (T_frames - 1) * HOP_LENGTH
-    t = np.linspace(0, N_samples / SAMPLE_RATE, N_samples)
+    t_frames = np.arange(T_frames)
+    t_samples = np.linspace(0, T_frames - 1, N_samples)
+    f0_interp = np.interp(t_samples, t_frames, f0)
+    gate_interp = np.interp(t_samples, t_frames, speech_gate)
 
-    pitch_mod = 12.0 * arousal * np.sin(2 * np.pi * 0.45 * t)
-    cadence = -25.0 * (t / max(1e-5, (N_samples / SAMPLE_RATE)))
-    f0 = np.clip(f0_base + pitch_mod + cadence, 70.0, 350.0)
+    # 2. Rich Liljencrants-Fant glottal harmonic excitation across all formant frequencies (up to 7.5 kHz)
+    phase = 2 * np.pi * np.cumsum(f0_interp) / SAMPLE_RATE
+    glottal_harmonic = np.zeros(N_samples)
+    max_harmonic = int(min(60, 7500.0 / f0_base))
+    for k in range(1, max_harmonic + 1):
+        # Natural vocal cord harmonic slope (-6 to -9 dB/octave)
+        amp = 1.0 / (1.0 + ((k * f0_base) / 1200.0)**1.15)
+        disp = 0.08 * np.sin(k * 0.4)
+        glottal_harmonic += amp * np.cos(k * phase + disp)
 
-    # 2. Glottal source: Rosenberg glottal volume velocity model
-    phase = 2 * np.pi * np.cumsum(f0) / SAMPLE_RATE
-    phase_wrapped = np.mod(phase, 2 * np.pi)
+    # 3. Continuous voicing degree: vocal cords vibrate continuously during speech
+    low_freq_energy = np.sum(linear_mag[:35, :], axis=0)  # Frequencies below ~820 Hz
+    total_energy = np.sum(linear_mag, axis=0) + 1e-6
+    low_ratio = low_freq_energy / total_energy
+    voicing_deg = np.clip(0.45 + 1.2 * low_ratio, 0.45, 0.95)
+    voicing_interp = np.interp(t_samples, t_frames, voicing_deg)
 
-    glottal = np.zeros_like(t)
-    open_quotient = 0.60
-    open_phase = phase_wrapped < (open_quotient * 2 * np.pi)
-    theta = phase_wrapped[open_phase] / (open_quotient * 2 * np.pi)
-    glottal[open_phase] = 0.5 * (1 - np.cos(np.pi * theta)) * np.sin(np.pi * theta / 2)
-    glottal_pulse = np.diff(glottal, prepend=0)
+    # 4. Mixed excitation: voiced glottal harmonics + turbulent aspiration
+    aspiration = np.random.randn(N_samples) * 0.08
+    mixed_excitation = voicing_interp * glottal_harmonic + (1.0 - voicing_interp * 0.6) * aspiration
+    mixed_excitation = mixed_excitation * gate_interp
+    mixed_excitation = mixed_excitation / (np.max(np.abs(mixed_excitation)) + 1e-6)
 
-    # Voicing detection from mel spectral tilt
-    low_ratio = np.mean(linear_mag[:35, :], axis=0) / (np.mean(linear_mag, axis=0) + 1e-6)
-    voiced_mask = low_ratio > 1.1
-    voiced_interp = np.interp(np.linspace(0, T_frames - 1, N_samples), np.arange(T_frames), voiced_mask.astype(float))
-
-    # Mixed excitation: voiced glottal pulses + turbulent unvoiced aspiration
-    unvoiced_noise = np.random.randn(N_samples) * 0.12
-    excitation = voiced_interp * glottal_pulse + (1.0 - voiced_interp * 0.75) * unvoiced_noise
-    excitation = excitation / (np.max(np.abs(excitation)) + 1e-6)
-
-    # 3. STFT of glottal source
+    # 5. STFT of glottal source
     window = np.hanning(WIN_LENGTH)
     _, _, zxx_exc = scipy.signal.stft(
-        excitation, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT, boundary=None, padded=True
+        mixed_excitation, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT, boundary=None, padded=True
     )
 
     min_T = min(linear_mag.shape[1], zxx_exc.shape[1])
     linear_mag_aligned = linear_mag[:, :min_T]
     zxx_exc_aligned = zxx_exc[:, :min_T]
 
-    # 4. Source-filter spectral shaping: preserve glottal harmonic spikes while modulating by vocal tract formant envelope
-    import scipy.ndimage
+    # Formant contrast enhancement (gamma = 1.20) elevating F1/F2/F3 resonances
+    linear_mag_sharp = np.power(linear_mag_aligned + 1e-6, 1.20)
+    linear_mag_sharp = linear_mag_sharp * (np.sum(linear_mag_aligned, axis=0, keepdims=True) / (np.sum(linear_mag_sharp, axis=0, keepdims=True) + 1e-6))
+
+    # Source-filter spectral shaping: modulate glottal harmonics by sharpened vocal tract formants
     exc_mag = np.abs(zxx_exc_aligned) + 1e-6
     smooth_exc_mag = scipy.ndimage.gaussian_filter1d(exc_mag, sigma=8, axis=0)
     norm_exc = zxx_exc_aligned / smooth_exc_mag
-    shaped_stft = linear_mag_aligned * norm_exc
+    shaped_stft = linear_mag_sharp * norm_exc
 
-    # 5. Inverse STFT to continuous audio waveform
+    # 6. Inverse STFT to continuous audio waveform
     _, audio = scipy.signal.istft(
         shaped_stft, fs=SAMPLE_RATE, window=window, nperseg=WIN_LENGTH, noverlap=WIN_LENGTH - HOP_LENGTH, nfft=N_FFT
     )
     if np.max(np.abs(audio)) > 1e-6:
-        audio = audio / np.max(np.abs(audio)) * 0.85
+        audio = audio / np.max(np.abs(audio)) * 0.89125
     return audio
 
 
@@ -186,7 +225,8 @@ def synthesize(
     valence: float = 0.6,
     arousal: float = 0.7,
     dominance: float = 0.8,
-    steps: int = 16,
+    steps: int = 24,
+    cfg_scale: float = 2.0,
     duration_seconds: float = 3.0,
     f0_base: float = 145.0,
     device_name: str = "auto"
@@ -197,7 +237,7 @@ def synthesize(
         device = torch.device(device_name)
 
     print(f"Proprietary Synthesis target device: {device}")
-    print(f"Synthesizing text: '{text}' (Vocoder mode: {vocoder_mode})")
+    print(f"Synthesizing text: '{text}' (Vocoder mode: {vocoder_mode}, CFG: {cfg_scale})")
     os.makedirs(os.path.dirname(output_wav), exist_ok=True)
 
     # 1. Load FlowMatchingDiT model
@@ -235,12 +275,21 @@ def synthesize(
     # Project to context space (1, 1 + L, context_dim)
     with torch.no_grad():
         context = dit_model.build_context(cond_vector, text_tokens)
+        context_uncond = torch.zeros_like(context)
 
-        # 3. Solve Flow Matching ODE to synthesize 80-channel mel frames
+        # 3. Solve Flow Matching ODE with CFG to synthesize 80-channel mel frames
         seq_len = int((duration_seconds * SAMPLE_RATE) / HOP_LENGTH)
-        print(f"Solving Optimal Transport ODE ({steps} RK2 steps, {seq_len} mel frames)...")
+        print(f"Solving Optimal Transport ODE ({steps} RK2 steps, {seq_len} mel frames, CFG={cfg_scale})...")
         start_time = time.time()
-        mel_latents = solve_flow_ode(dit_model, context, seq_len=seq_len, steps=steps, solver="rk2", device=device)
+        mel_latents = solve_flow_ode(
+            dit_model, context,
+            context_uncond=context_uncond,
+            cfg_scale=cfg_scale,
+            seq_len=seq_len,
+            steps=steps,
+            solver="rk2",
+            device=device
+        )
         ode_elapsed = time.time() - start_time
         print(f"Flow Matching latent generation completed in {ode_elapsed:.2f}s.")
 
@@ -291,7 +340,8 @@ def main():
     parser.add_argument("--valence", type=float, default=0.6)
     parser.add_argument("--arousal", type=float, default=0.7)
     parser.add_argument("--dominance", type=float, default=0.8)
-    parser.add_argument("--steps", type=int, default=16)
+    parser.add_argument("--steps", type=int, default=24)
+    parser.add_argument("--cfg_scale", type=float, default=2.0)
     parser.add_argument("--duration", type=float, default=3.0)
     parser.add_argument("--f0_base", type=float, default=145.0)
     parser.add_argument("--device", type=str, default="auto")
@@ -307,6 +357,7 @@ def main():
         arousal=args.arousal,
         dominance=args.dominance,
         steps=args.steps,
+        cfg_scale=args.cfg_scale,
         duration_seconds=args.duration,
         f0_base=args.f0_base,
         device_name=args.device

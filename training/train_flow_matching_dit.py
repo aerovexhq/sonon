@@ -513,6 +513,10 @@ def train_flow_matching(
             text_tokens = batch["text_tokens"].to(device)
             context = model.build_context(cond_raw, text_tokens)
 
+            # Conditioning dropout: 15% probability drop context to zeros for Classifier-Free Guidance (CFG)
+            if torch.rand(1).item() < 0.15:
+                context = torch.zeros_like(context)
+
             # Predict velocity field with key padding mask
             pad_mask = batch["pad_mask"].to(device)
             v_pred = model(x_t, t, context, key_padding_mask=pad_mask)
@@ -528,7 +532,12 @@ def train_flow_matching(
                     loss_infill += F.mse_loss(v_pred[i, start_m:end_m, :], u_t[i, start_m:end_m, :])
             loss_infill = loss_infill / b
 
-            loss = loss_cfm + 0.3 * loss_infill
+            # Articulatory temporal smoothness: penalize rapid frame-to-frame velocity flutter
+            diff_v_pred = v_pred[:, 1:, :] - v_pred[:, :-1, :]
+            diff_u_t = u_t[:, 1:, :] - u_t[:, :-1, :]
+            loss_smooth = F.mse_loss(diff_v_pred, diff_u_t)
+
+            loss = loss_cfm + 0.3 * loss_infill + 0.2 * loss_smooth
 
             optimizer.zero_grad()
             loss.backward()
