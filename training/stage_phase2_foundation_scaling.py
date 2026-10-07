@@ -263,39 +263,39 @@ def main():
     )
     parser.add_argument(
         "--dailytalk_parquet",
-        type=str,
+        nargs="+",
         default=None,
-        help="Path to DailyTalk parquet partition file.",
+        help="Path(s) to DailyTalk parquet partition file(s).",
     )
     parser.add_argument(
         "--vctk_parquet",
-        type=str,
+        nargs="+",
         default=None,
-        help="Path to VCTK parquet partition file.",
+        help="Path(s) to VCTK parquet partition file(s).",
     )
     parser.add_argument(
         "--libritts_parquet",
-        type=str,
+        nargs="+",
         default=None,
-        help="Path to LibriTTS-R parquet partition file.",
+        help="Path(s) to LibriTTS-R parquet partition file(s).",
     )
     parser.add_argument(
         "--max_dt_turns",
         type=int,
         default=2500,
-        help="Maximum DailyTalk turns to stage.",
+        help="Maximum DailyTalk turns to stage per partition.",
     )
     parser.add_argument(
         "--max_vctk_samples",
         type=int,
         default=1200,
-        help="Maximum VCTK studio samples to stage.",
+        help="Maximum VCTK studio samples to stage per partition.",
     )
     parser.add_argument(
         "--max_libri_samples",
         type=int,
         default=2500,
-        help="Maximum LibriTTS-R samples to stage.",
+        help="Maximum LibriTTS-R samples to stage per partition.",
     )
     parser.add_argument(
         "--output_dir",
@@ -326,18 +326,25 @@ def main():
     libri_staged = 0
 
     if args.dailytalk_parquet:
-        dt_p = Path(args.dailytalk_parquet)
-        dt_staged, dt_hes = stage_dailytalk_partition(dt_p, out_dir, max_turns=args.max_dt_turns)
+        for dt_str in args.dailytalk_parquet:
+            dt_p = Path(dt_str)
+            sub_staged, sub_hes = stage_dailytalk_partition(dt_p, out_dir, max_turns=args.max_dt_turns)
+            dt_staged += sub_staged
+            dt_hes += sub_hes
         total_staged += dt_staged
 
     if args.vctk_parquet:
-        vctk_p = Path(args.vctk_parquet)
-        vctk_staged = stage_vctk_partition(vctk_p, out_dir, max_samples=args.max_vctk_samples)
+        for vctk_str in args.vctk_parquet:
+            vctk_p = Path(vctk_str)
+            sub_staged = stage_vctk_partition(vctk_p, out_dir, max_samples=args.max_vctk_samples)
+            vctk_staged += sub_staged
         total_staged += vctk_staged
 
     if args.libritts_parquet:
-        libri_p = Path(args.libritts_parquet)
-        libri_staged = stage_libritts_partition(libri_p, out_dir, max_samples=args.max_libri_samples)
+        for libri_str in args.libritts_parquet:
+            libri_p = Path(libri_str)
+            sub_staged = stage_libritts_partition(libri_p, out_dir, max_samples=args.max_libri_samples)
+            libri_staged += sub_staged
         total_staged += libri_staged
 
     print("\n================================================================================")

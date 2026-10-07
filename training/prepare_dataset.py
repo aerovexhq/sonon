@@ -412,13 +412,21 @@ def load_transcripts_from_file(file_path: str) -> Dict[str, str]:
 class WebDatasetShardPacker:
     """Packages curated audio and JSON metadata into WebDataset .tar shards and Sonon binary archives."""
 
-    def __init__(self, output_dir: Path, shard_prefix: str = "shard", max_samples: int = SHARD_MAX_SAMPLES, start_shard_idx: int = 0):
+    def __init__(
+        self,
+        output_dir: Path,
+        shard_prefix: str = "shard",
+        max_samples: int = SHARD_MAX_SAMPLES,
+        start_shard_idx: int = 0,
+        write_sonon: bool = False,
+    ):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.shard_prefix = shard_prefix
         self.max_samples = max_samples
         self.current_shard_idx = start_shard_idx
         self.current_shard_samples = 0
+        self.write_sonon = write_sonon
         self.current_tar: Optional[tarfile.TarFile] = None
         self.current_tar_path: Optional[Path] = None
         self.current_sonon_file: Optional[io.BufferedWriter] = None
@@ -432,12 +440,13 @@ class WebDatasetShardPacker:
         self.current_tar_path = self.output_dir / shard_name
         self.current_tar = tarfile.open(self.current_tar_path, "w")
 
-        # Open companion Sonon binary shard
-        sonon_name = f"{self.shard_prefix}_{self.current_shard_idx:06d}.sonon"
-        self.current_sonon_path = self.output_dir / sonon_name
-        self.current_sonon_file = open(self.current_sonon_path, "wb")
-        # Write Sonon magic header
-        self.current_sonon_file.write(b"SONON_SHARD_V1\0")
+        # Open companion Sonon binary shard only if requested
+        if self.write_sonon:
+            sonon_name = f"{self.shard_prefix}_{self.current_shard_idx:06d}.sonon"
+            self.current_sonon_path = self.output_dir / sonon_name
+            self.current_sonon_file = open(self.current_sonon_path, "wb")
+            # Write Sonon magic header
+            self.current_sonon_file.write(b"SONON_SHARD_V1\0")
 
         self.shards_created.append(shard_name)
         self.current_shard_samples = 0
@@ -471,27 +480,28 @@ class WebDatasetShardPacker:
         json_tarinfo.mtime = 1760000000
         self.current_tar.addfile(json_tarinfo, io.BytesIO(json_bytes))
 
-        # 4. Add to companion Sonon binary shard (DatasetSample format)
-        sonon_sample = {
-            "sample_id": sample_uuid,
-            "audio": audio.tolist(),
-            "sample_rate": float(sample_rate),
-            "transcript": metadata.get("transcript_normalized", ""),
-            "speaker_id": metadata.get("speaker_id"),
-            "quality_report": {
-                "is_acceptable": True,
-                "snr_db": float(metadata.get("snr_db", 30.0)),
-                "clipping_ratio": 0.0,
-                "crest_factor": float(metadata.get("crest_factor", 4.0)),
-                "dc_offset": float(metadata.get("dc_offset", 0.0)),
-                "spectral_flatness": float(metadata.get("spectral_flatness", 0.15)),
-                "rms_energy": float(metadata.get("rms_energy", 0.1)),
-            },
-        }
-        sonon_json = json.dumps(sonon_sample).encode("utf-8")
-        length_bytes = len(sonon_json).to_bytes(4, byteorder="little")
-        self.current_sonon_file.write(length_bytes)
-        self.current_sonon_file.write(sonon_json)
+        # 4. Add to companion Sonon binary shard (DatasetSample format) only if open
+        if self.current_sonon_file is not None:
+            sonon_sample = {
+                "sample_id": sample_uuid,
+                "audio": audio.tolist(),
+                "sample_rate": float(sample_rate),
+                "transcript": metadata.get("transcript_normalized", ""),
+                "speaker_id": metadata.get("speaker_id"),
+                "quality_report": {
+                    "is_acceptable": True,
+                    "snr_db": float(metadata.get("snr_db", 30.0)),
+                    "clipping_ratio": 0.0,
+                    "crest_factor": float(metadata.get("crest_factor", 4.0)),
+                    "dc_offset": float(metadata.get("dc_offset", 0.0)),
+                    "spectral_flatness": float(metadata.get("spectral_flatness", 0.15)),
+                    "rms_energy": float(metadata.get("rms_energy", 0.1)),
+                },
+            }
+            sonon_json = json.dumps(sonon_sample).encode("utf-8")
+            length_bytes = len(sonon_json).to_bytes(4, byteorder="little")
+            self.current_sonon_file.write(length_bytes)
+            self.current_sonon_file.write(sonon_json)
 
         self.current_shard_samples += 1
 
@@ -583,6 +593,12 @@ def main():
         action="store_true",
         help="Append new samples to existing train and validation manifests rather than replacing",
     )
+    parser.add_argument(
+        "--write_sonon_archive",
+        action="store_true",
+        default=False,
+        help="Also write uncompressed companion .sonon binary shard (disabled by default to conserve disk)",
+    )
 
     args = parser.parse_args()
 
@@ -623,6 +639,7 @@ def main():
         shard_prefix="shard",
         max_samples=args.shard_size,
         start_shard_idx=args.start_shard_idx,
+        write_sonon=args.write_sonon_archive,
     )
 
     curated_records = []
