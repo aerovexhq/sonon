@@ -328,6 +328,14 @@ def synthesize(
         ode_elapsed = time.time() - start_time
         print(f"Flow Matching latent generation completed in {ode_elapsed:.2f}s.")
 
+        # Monotonic end-of-phrase silence decay on the last 25 frames across all vocoder modes
+        fade_frames = min(25, seq_len // 4)
+        if fade_frames > 0:
+            fade_curve = torch.from_numpy(0.5 * (1.0 + np.cos(np.linspace(0, np.pi, fade_frames)))).to(device, dtype=mel_latents.dtype)
+            for i, f_idx in enumerate(range(seq_len - fade_frames, seq_len)):
+                w = fade_curve[i]
+                mel_latents[0, f_idx, :] = w * mel_latents[0, f_idx, :] + (1.0 - w) * (-2.0)
+
         # 4. Invert mel-spectrogram to continuous audio waveform
         if vocoder_mode == "neural":
             print(f"Loading proprietary BigVganVocoder weights: {vocoder_checkpoint}...")
