@@ -216,8 +216,8 @@ pub use wavelet_synthesis::{
     WaveletPhysicalFlowSynthesizer, WaveletScalogram, WaveletSynthesizerConfig,
 };
 pub use edge_runtime::{
-    AudioSpscRingBuffer, EdgeSpeechRuntime, QuantizedLinear, QuantizedWeightTensor,
-    StaticTensorArena, StreamingEdgeConfig,
+    AudioSpscRingBuffer, EdgeSpeechRuntime, LpcLatticeSynthesizer, QuantizedLinear,
+    QuantizedWeightTensor, StaticTensorArena, Stm32ProfileMetrics, StreamingEdgeConfig,
 };
 
 

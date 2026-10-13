@@ -27,7 +27,11 @@ __pycache__/
 *.pyc
 data/
 output/
-models/
+models/*
+!models/stm32/
+!models/micro_ddsp/
+models/micro_ddsp/*
+!models/micro_ddsp/reference_frames.json
 checkpoints/
 *.pt
 *.tar
@@ -38,3 +42,8 @@ checkpoints/
 .vitepress/cache/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+
+# Local scratch comparison scripts
+test_bark_expressive.py
+test_chattts_expressive.py
+

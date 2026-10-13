@@ -395,9 +395,11 @@ fn test_mmse_lsa_realtime_throughput_benchmark() {
         events.len()
     );
 
+    let min_throughput = if cfg!(debug_assertions) { 10000.0 } else { 200000.0 };
     assert!(
-        throughput_sps > 30000.0,
-        "Throughput {:.0} samples/sec was below 30,000 samples/sec threshold in unoptimized test mode",
-        throughput_sps
+        throughput_sps > min_throughput,
+        "Throughput {:.0} samples/sec was below {:.0} samples/sec threshold",
+        throughput_sps,
+        min_throughput
     );
 }

@@ -359,12 +359,30 @@ class ShardedAcousticDataset(Dataset):
             except Exception:
                 pass
 
-        # Synthetic fallback if shard file unextracted
+        # Robust fallback: if audio not found, attempt next sample to avoid synthetic sine wave
+        attempts = 0
+        curr_idx = idx
+        while (audio is None or len(audio) < 1000) and attempts < 10:
+            attempts += 1
+            curr_idx = (curr_idx + 1) % len(self.samples)
+            alt_record = self.samples[curr_idx]
+            alt_uuid = alt_record.get("uuid", f"sample_{curr_idx}")
+            alt_shard = alt_record.get("shard", f"shard_{curr_idx // 475:06d}.tar")
+            if alt_shard in self.shard_tar_files:
+                try:
+                    tar_path = self.shard_tar_files[alt_shard]
+                    with tarfile.open(tar_path, "r") as tar:
+                        f = tar.extractfile(f"{alt_uuid}.wav")
+                        if f:
+                            audio, _ = sf.read(io.BytesIO(f.read()), dtype="float32")
+                            record = alt_record
+                            uuid = alt_uuid
+                except Exception:
+                    pass
+
         if audio is None or len(audio) < 1000:
-            duration = record.get("duration_seconds", 2.0)
-            t_axis = np.linspace(0, duration, int(duration * SAMPLE_RATE))
-            f0 = 150.0 + 30.0 * np.sin(2 * np.pi * 1.5 * t_axis)
-            audio = 0.3 * np.sin(2 * np.pi * f0 * t_axis).astype(np.float32)
+            raise RuntimeError(f"Could not load valid audio from shards. Ensure shards are present in {self.shards_dir}")
+
 
         # Extract log-mel spectrogram
         mel = extract_log_mel_spectrogram(audio, SAMPLE_RATE)  # (T, 80)
